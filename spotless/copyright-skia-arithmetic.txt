@@ -1,0 +1,4 @@
+// Copyright $YEAR, Serhii Yaremych (desugar-64) and the Obvid project contributors
+// SPDX-License-Identifier: Apache-2.0
+// Implements the arithmetic of Skia's SkMaskBlurFilter (BSD-3-Clause), see NOTICE.
+

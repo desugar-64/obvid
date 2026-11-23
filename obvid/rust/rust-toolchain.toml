@@ -1,0 +1,7 @@
+# The compiler the shipped `.so` and the codegen check are built with; rustup installs it, with the Android target, on
+# first use in this directory.
+[toolchain]
+channel = "1.99.0"
+targets = ["aarch64-linux-android"]
+components = ["clippy", "rustfmt"]
+profile = "minimal"

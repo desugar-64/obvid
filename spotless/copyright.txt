@@ -1,0 +1,3 @@
+// Copyright $YEAR, Serhii Yaremych (desugar-64) and the Obvid project contributors
+// SPDX-License-Identifier: Apache-2.0
+

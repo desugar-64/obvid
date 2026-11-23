@@ -1,0 +1,25 @@
+# Gradle, Android Studio
+.gradle/
+build/
+.kotlin/
+*.iml
+/.idea/
+local.properties
+/captures
+.externalNativeBuild
+.cxx
+.DS_Store
+
+# Rust build output
+obvid/rust/target/
+
+# Benchmark and device-test output (scripts/ write to results/<device>/)
+results/
+
+# Python bytecode (scripts import perfetto_util)
+__pycache__/
+
+# Personal Claude Code settings; the project's skills are shared
+.claude/*
+!.claude/skills/
+CLAUDE.local.md

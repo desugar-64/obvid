@@ -1,0 +1,22 @@
+public final class dev/serhiiyaremych/obvid/DropShadowKt {
+	public static final fun dropShadow (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/graphics/Shape;Landroidx/compose/ui/graphics/shadow/Shadow;)Landroidx/compose/ui/Modifier;
+	public static final fun dropShadow (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/graphics/Shape;Lkotlin/jvm/functions/Function1;)Landroidx/compose/ui/Modifier;
+}
+
+public final class dev/serhiiyaremych/obvid/InnerShadowKt {
+	public static final fun innerShadow (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/graphics/Shape;Landroidx/compose/ui/graphics/shadow/Shadow;)Landroidx/compose/ui/Modifier;
+	public static final fun innerShadow (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/graphics/Shape;Lkotlin/jvm/functions/Function1;)Landroidx/compose/ui/Modifier;
+}
+
+public final class dev/serhiiyaremych/obvid/ShadowExtent : java/lang/Enum {
+	public static final field Compose Ldev/serhiiyaremych/obvid/ShadowExtent;
+	public static final field Full Ldev/serhiiyaremych/obvid/ShadowExtent;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/serhiiyaremych/obvid/ShadowExtent;
+	public static fun values ()[Ldev/serhiiyaremych/obvid/ShadowExtent;
+}
+
+public final class dev/serhiiyaremych/obvid/ShadowExtentKt {
+	public static final fun getLocalShadowExtent ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+

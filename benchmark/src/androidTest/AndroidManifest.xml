@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- simpleperf (Microbenchmark StackSampling, scripts/profile.sh) needs a profileable test APK. -->
+  <application>
+    <profileable android:shell="true" />
+  </application>
+</manifest>

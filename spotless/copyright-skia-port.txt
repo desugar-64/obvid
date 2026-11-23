@@ -1,0 +1,5 @@
+$SKIA_COPYRIGHT
+// Copyright $YEAR, Serhii Yaremych (desugar-64) and the Obvid project contributors (Rust port)
+// SPDX-License-Identifier: BSD-3-Clause
+// See LICENSES/Skia-BSD-3-Clause.txt
+

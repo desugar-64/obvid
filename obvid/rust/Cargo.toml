@@ -1,0 +1,29 @@
+[package]
+name = "obvid"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+# No doctests: they would link the `no_std` library (its panic handler) into a `std` test binary.
+doctest = false
+
+# `no_std` needs `panic = "abort"` in every profile that builds the library outside tests (the prebuilt `core` is
+# compiled for unwinding, which only `std` supports); tests always unwind and use `std`.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# Symbols and line tables stay in the built `.so`, the one `ndk-stack` symbolizes crashes with; Gradle packages a
+# copy stripped by `llvm-objcopy --strip-all` (same build ID; `.eh_frame` stays for Android's unwinder). Line tables
+# do not change the generated code.
+strip = false
+debug = "line-tables-only"
+
+[features]
+# The test surface (`ObvidTesting` exports): debug and benchmark builds only.
+testing = []

@@ -1,0 +1,5 @@
+# A GNU build ID in the `.so`: it ties the packaged (stripped) library to the unstripped one that symbolizes its
+# crashes (tombstones print it next to each frame of the library). `-z defs`: an undefined symbol is a link error,
+# not a `dlopen` failure on the device.
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,--build-id=sha1", "-C", "link-arg=-Wl,-z,defs"]
