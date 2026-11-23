@@ -1,5 +1,6 @@
 [![CI](https://github.com/desugar-64/obvid/actions/workflows/ci.yml/badge.svg)](https://github.com/desugar-64/obvid/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Maven](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fdesugar-64.github.io%2Fobvid%2Fmaven%2Fdev%2Fserhiiyaremych%2Fobvid%2Fmaven-metadata.xml&label=maven)](#install-and-use)
 [![minSdk](https://img.shields.io/badge/minSdk-24-green)](docs/limits.md#compose-113-or-newer-minsdk-24)
 
 <picture>
