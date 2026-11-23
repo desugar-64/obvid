@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Shadows with blur radii below approximately 2.6 px (for example 0.5–0.9 dp on a Pixel 6) use the Obvid blur on all
+  shapes, with a NEON version of the small blur of Skia ([#2](https://github.com/desugar-64/obvid/issues/2)). One
+  rebuild on a Pixel 6 is 3.0–4.1 times faster than Compose for paths and circles, and 5.2–8.5 times for round rects.
+  Before, these shadows used the Skia of the device: about 1.1 times faster than Compose, and round rects at 0.9 dp
+  were slower. The pixels stay identical to Compose on Android 16–17.
+
 ## 0.1.0
 
 The first release. Obvid replaces the `dropShadow` and `innerShadow` modifiers of Jetpack Compose. Change the two

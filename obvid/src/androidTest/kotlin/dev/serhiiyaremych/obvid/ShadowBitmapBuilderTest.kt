@@ -62,6 +62,9 @@ import org.junit.runner.RunWith
  * the builder's nested-rects test ([NestedRectsEdgeShape]), with the same checks and the route asserted by
  * [FrameRouteModel]; plus Java allocations per rebuild of a frame while its outline is kept. Output (subdir
  * [InnerScreenCases.RESULTS_DIR2]): `frames-drop-builder.csv` and `frames-drop-builder-summary.txt`.
+ *
+ * [smallBlurMatchesCompose]: blur radii under 2.6 px (σ < 2, Skia's small blur) on paths, round rects and frames
+ * (holes around Skia's frame nine-patch threshold included), with the same checks and the route asserted. Output: `smallblur-drop-builder.csv` and `smallblur-drop-builder-summary.txt`.
  */
 @RunWith(AndroidJUnit4::class)
 class ShadowBitmapBuilderTest {
@@ -379,6 +382,148 @@ class ShadowBitmapBuilderTest {
     allocations.second()
   }
 
+  /**
+   * Blur radii under 2.6 px (σ < 2: Skia's small blur, Obvid's NEON port on the whole-mask routes): the radii of
+   * [SmallBlurCases] (px on every density, covering filter radii 1–4, and 0.5 / 0.9 dp as the rebuild benchmarks) ×
+   * `mixed`, `morph` (the mask route), `rrect16` (the nine-patch, or its full mask where the small rect does not fit)
+   * and `circle` (an oval's full mask; a simple round rect at +8 dp) × 48 / 200 dp × spread 0 / 8 / −8 dp; the
+   * frames of [SmallBlurCases.frames] (counter-clockwise hole, and even-odd) on the same grid; and frames on a 100 dp
+   * box whose moved hole rounds in to `2m + 3 − 1`, `2m + 3` or `2m + 3 + 1` px on one axis
+   * ([FrameRouteModel.holeFrame]) at every radius × spread 0 / −4 dp. Fresh and through one builder and bitmap pair
+   * in a fixed shuffled order. The checks of [builderMatchesCompose], the route (the mask route for the paths, a
+   * round-rect route of Obvid's for the round rects, [FrameRouteModel]'s for the frames: the frame nine-patch, the
+   * mask route below the threshold, the Skia route with spread > 0), and that the px radii give σ < 2 with every
+   * border 1–4. Output: `smallblur-drop-builder.csv` (the columns of `builder.csv`
+   * plus σ and the border) and `smallblur-drop-builder-summary.txt`.
+   */
+  @Test
+  fun smallBlurMatchesCompose() {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val density = Density(context)
+    val radii = SmallBlurCases.radii(density.density)
+    // (radius label, case)
+    val cases = buildList {
+      for (name in SmallBlurCases.SHAPES) for (sizeDp in listOf(48, 200)) for ((label, r) in radii) {
+        for (s in listOf(0f, 8f, -8f)) add(label to PathCase(ShapeCase(name, catalogShape(name)), sizeDp, r, s))
+      }
+      for (sizeDp in listOf(48, 200)) for ((label, r) in radii) for (s in listOf(0f, 8f, -8f)) {
+        for (frame in SmallBlurCases.frames()) add(label to PathCase(frame, sizeDp, r, s))
+      }
+      var n = 0
+      val side = with(density) { SmallBlurCases.HOLE_SIDE_DP.dp.roundToPx().toFloat() }
+      for ((label, r) in radii) for (s in SmallBlurCases.HOLE_SPREADS_DP) {
+        val radius = with(density) { r.dp.toPx() }
+        val threshold = 2 * ObvidNative.builderBorder(radius) + 3
+        for (axis in 0..1) for (k in -1..1) {
+          val frac = HOLE_FRACTIONS[n % HOLE_FRACTIONS.size]
+          val shape = FrameRouteModel.holeFrame(side, threshold, axis, k, frac, radius, radius, evenOdd = n % 2 == 1) ?: continue
+          val name = "hole${"xy"[axis]}${if (k < 0) "Below" else if (k > 0) "Above" else "At"}"
+          add(label to PathCase(ShapeCase(name, shape), SmallBlurCases.HOLE_SIDE_DP, r, s))
+          n++
+        }
+      }
+    }
+    // The model's route: null for a round rect (either round-rect route of Obvid's).
+    class SmallRow(
+      val case: PathCase,
+      val label: String,
+      val sigma: Float,
+      val border: Int,
+      val model: FrameRouteModel.Decision?,
+      val csv: String,
+      val o: Outcome,
+    )
+    fun run(builder: ShadowBitmapBuilder, target: ShadowBitmaps, labelled: Pair<String, PathCase>, phase: String, index: Int): SmallRow {
+      val (label, c) = labelled
+      val size = c.size(density)
+      val outline = c.shape.shape.createOutline(size, LayoutDirection.Ltr, density)
+      val radius = c.radius(density)
+      val sigma = SmallBlurCases.sigma(radius)
+      val border = ObvidNative.builderBorder(radius)
+      val model =
+        when (c.shape.name) {
+          in SmallBlurCases.PATH_SHAPES -> FrameRouteModel.Decision(ShadowBitmapBuilder.Route.Mask.name, "path")
+          in SmallBlurCases.ROUND_SHAPES -> null
+          // Frames: the builder's nested-rects superset takes them; with spread > 0 the fill and stroke are two draws.
+          else ->
+            if (c.spreadDp > 0f) FrameRouteModel.Decision("Skia", "spread")
+            else FrameRouteModel.decide(FrameRouteModel.canonicalPoints(outline), true, radius, radius, radius)
+        }
+      val o = measure(builder, target, outline, size, radius, c.spread(density))
+      val csv =
+        (listOf<Any>(
+            Build.MODEL.replace(',', ' '),
+            Build.VERSION.SDK_INT,
+            phase,
+            index,
+            c.shape.name,
+            c.sizeDp,
+            size.width,
+            fmt(c.radiusDp),
+            radius,
+            fmt(c.spreadDp),
+            c.spread(density),
+          ) + o.columns() + listOf(sigma, border))
+          .joinToString(",")
+      return SmallRow(c, label, sigma, border, model, csv, o)
+    }
+    val fresh = cases.mapIndexed { i, c -> ShadowBitmapBuilder().use { b -> run(b, ShadowBitmaps(), c, "fresh", i) } }
+    val reuse = ShadowBitmapBuilder().use { b ->
+      val target = ShadowBitmaps()
+      cases.shuffled(Random(SEED)).mapIndexed { i, c -> run(b, target, c, "reuse", i) }
+    }
+    val all = fresh + reuse
+
+    val summary = ArrayList<String>()
+    for ((phase, list) in listOf("fresh" to fresh, "reuse" to reuse)) {
+      val o = list.map { it.o }
+      summary +=
+        "small blur $phase: identical ${o.count { it.identical }} / ${o.size}, max diff ${o.maxOf { it.diff.max }}; routes " +
+          "(identical / cases): ${routeCounts(o)}; outside used non-zero ${o.count { it.outsideNonZero > 0 }}, " +
+          "generation id unchanged ${o.count { !it.genChanged }}"
+      for ((label, group) in list.groupBy { it.label }) {
+        val first = group.first()
+        val go = group.map { it.o }
+        summary += "  $phase $label (${first.case.radius(density)} px, σ ${first.sigma}, border ${first.border}): identical " +
+          "${go.count { it.identical }} / ${go.size}; routes ${routeCounts(go)}"
+      }
+    }
+    fun expected(r: SmallRow) = r.model?.let { it.route == r.o.route } ?: (r.o.route in SmallBlurCases.ROUND_ROUTES)
+    for ((kind, group) in all.groupBy { it.model?.kind ?: "roundRect" }.toSortedMap()) {
+      val go = group.map { it.o }
+      summary += "  model $kind: identical ${go.count { it.identical }} / ${go.size}; routes ${routeCounts(go)}"
+    }
+    val holes = all.filter { (it.model?.holeX ?: FrameRouteModel.NO_HOLE) != FrameRouteModel.NO_HOLE }
+    for ((key, group) in holes.groupBy { checkNotNull(it.model).holeLabel to it.border }.toList().sortedBy { it.first.toString() }) {
+      val go = group.map { it.o }
+      summary += "  hole − (2m + 3) ${key.first}, border ${key.second}: identical ${go.count { it.identical }} / ${go.size}; " +
+        "routes ${routeCounts(go)}"
+    }
+    summary += "routes as expected ${all.count { expected(it) }} / ${all.size}"
+    summary += "σ < 2 in ${all.count { it.sigma < 2f }} / ${all.size} builds, borders ${all.filter { it.sigma < 2f }.map { it.border }.toSortedSet()}"
+    summary += "API ${Build.VERSION.SDK_INT}, ${Build.MODEL}, density ${density.density}"
+    summary += offTargetLines(listOf("fresh" to fresh.map { it.o }, "reuse" to reuse.map { it.o }))
+    summary.forEach { Log.i(TAG, it) }
+    all.filter { !it.o.identical }.take(MAX_LOGGED_ROWS).forEach { Log.i(TAG, it.csv) }
+    writeResults(context, SMALL_CSV_NAME, listOf(SMALL_HEADER) + all.map { it.csv })
+    writeResults(context, SMALL_SUMMARY_NAME, summary)
+
+    val pxRows = all.filter { it.label.startsWith("px") }
+    assertTrue("px radii with σ ≥ 2: ${pxRows.filter { it.sigma >= 2f }.map { it.csv }}", pxRows.all { it.sigma < 2f })
+    assertEquals("borders of the px radii", setOf(1, 2, 3, 4), pxRows.map { it.border }.toSet())
+    for (r in all) {
+      val model = r.model
+      if (model != null) {
+        assertEquals("route (${model.kind}): ${r.csv}", model.route, r.o.route)
+      } else {
+        assertTrue("route: ${r.csv}", r.o.route in SmallBlurCases.ROUND_ROUTES)
+      }
+      if (TargetSkia.isDevice) assertTrue("not identical: ${r.csv}", r.o.identical)
+      assertEquals("stale pixels outside used: ${r.csv}", 0, r.o.outsideNonZero)
+      assertTrue("generation id unchanged: ${r.csv}", r.o.genChanged)
+    }
+  }
+
   /** `radius 0`, or the spread's sign with radius > 0. */
   private fun spreadLabel(c: PathCase): String =
     when {
@@ -449,8 +594,8 @@ class ShadowBitmapBuilderTest {
    * 360 cases: corners 4 / 16 / 40 / 6.3 dp ([roundRectShapes]) and `CircleShape` (`circle`) × layouts 48², 120², 200²,
    * 360², 360 × 48 and 48 × 200 dp × radius 1 / 4 / 24 / 64 dp × spread 0 / 8 / −8 dp: 288 round rects and 72 circles.
    * At density 2.625 both sides of Skia's nine-patch test occur (`W = 2·(ceil(corner) + border) + 1`
-   * against the rect's width), small blurs (σ < 2 at 1 dp) and PlanGauss, and setRectXY's scaling (40 dp corners on
-   * 48 dp sides). Circles: at spread 0 and −8 dp on square layouts mostly ovals (float rounding can leave one simple),
+   * against the rect's width), PlanGauss from its smallest windows (1 dp is σ ≈ 2.02, just above Skia's small blur;
+   * σ < 2 is [smallBlurMatchesCompose]'s) up, and setRectXY's scaling (40 dp corners on 48 dp sides). Circles: at spread 0 and −8 dp on square layouts mostly ovals (float rounding can leave one simple),
    * the whole mask either way; simple round rects at +8 dp and on the oblong layouts.
    */
   private val roundCases =
@@ -752,6 +897,9 @@ class ShadowBitmapBuilderTest {
     const val FRAMES_CSV_NAME = "frames-drop-builder.csv"
     const val FRAMES_SUMMARY_NAME = "frames-drop-builder-summary.txt"
     const val MAX_LOGGED_ROWS = 50
+    const val SMALL_CSV_NAME = "smallblur-drop-builder.csv"
+    const val SMALL_SUMMARY_NAME = "smallblur-drop-builder-summary.txt"
+    const val SMALL_HEADER = "$HEADER,sigma,border"
     const val ROUND_CSV_NAME = "roundrect-builder.csv"
     const val ROUND_SUMMARY_NAME = "roundrect-builder-summary.txt"
     const val ROUND_HEADER =

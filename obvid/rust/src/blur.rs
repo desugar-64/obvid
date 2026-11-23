@@ -4,8 +4,8 @@
 
 //! The exact blur: Android's `BlurMaskFilter(radius, NORMAL)` on an A8 mask, identical to the scalar port
 //! [`skia::blur_a8`] for every input, with reused scratch. σ ≥ 2 (`PlanGauss`) runs the NEON three-box recurrence
-//! ([`crate::neon::box3`]) in two passes with the interior skip; σ < 2 (`small_blur`) and the no-blur case run the
-//! scalar port's code.
+//! ([`crate::neon::box3`]) in two passes with the interior skip; σ < 2 runs Skia's direct `small_blur` in NEON
+//! ([`crate::neon::small`]); the no-blur case copies the source.
 //!
 //! One entry point, [`blur_a8_window_into`]: it computes and stores a window of the blurred mask (the part a shadow
 //! bitmap keeps) straight into the destination, plain ([`Store::Replace`]) or as Skia's A8 srcover blit
@@ -67,6 +67,7 @@ use alloc::vec::Vec;
 use crate::neon::a8;
 use crate::neon::box3::NARROW_T0_MAX_WINDOW;
 use crate::neon::flags::Skip;
+use crate::neon::small;
 use crate::skia::{self, PlanGauss, SmallBlurFactors};
 
 mod passes;
@@ -87,7 +88,8 @@ pub struct Scratch {
     vflags: Vec<u8>,
     /// Interior skip: the skips of the current scan.
     skips: Vec<Skip>,
-    /// σ < 2: the row buffer of `small_blur`'s horizontal pass.
+    /// σ < 2: the row buffer of `small_blur` (the zero row of its vertical pass, the padded input row of its
+    /// horizontal pass).
     small_row: Vec<u8>,
     /// σ < 2 into a part of the mask or with srcover: the whole blurred mask, then the window is stored from it.
     small_mask: Vec<u8>,
@@ -180,9 +182,9 @@ pub fn blur_geometry(width: usize, height: usize, sigma: f64) -> BlurGeometry {
 /// The `window` of [`skia::blur_a8`]'s output stored into `dst` with `store`: `dst[0]` is blurred pixel
 /// (`window.x0`, `window.y0`), window rows are `dst_stride` apart, and only the window's bytes are written (bytes
 /// between rows are left as they were). The bytes are those of the whole blur in the window, stored plainly or
-/// srcover'd onto `dst`. σ ≥ 2 computes only what the window needs (module docs, "Layout"); σ < 2 runs the scalar
-/// port's `small_blur`, straight into `dst` for the full window with plain stores, otherwise into `scratch` with the
-/// window stored from it; the no-blur case stores from the source. No route allocates once `scratch` has grown to
+/// srcover'd onto `dst`. σ ≥ 2 computes only what the window needs (module docs, "Layout"); σ < 2 runs the NEON
+/// `small_blur` ([`crate::neon::small`]), straight into `dst` for the full window with plain stores, otherwise into
+/// `scratch` with the window stored from it; the no-blur case stores from the source. No route allocates once `scratch` has grown to
 /// the size. Panics if the window is not inside [`blur_geometry`] or `dst` is too short for it; an empty window
 /// writes nothing.
 #[allow(clippy::too_many_arguments)]
@@ -233,11 +235,11 @@ pub(crate) fn blur_a8_window_into(
         let Scratch { small_row, small_mask, .. } = scratch;
         if store == Store::Replace && window == Window::full(gw, geometry.height) {
             // `small_blur_into` writes only the rows' bytes, so the whole mask goes straight into `dst`.
-            skia::small_blur_into(src, width, height, stride, &factors, &factors, dst, dst_stride, small_row);
+            small::small_blur_into(src, width, height, stride, &factors, &factors, dst, dst_stride, small_row);
             return;
         }
         let mask = grown(small_mask, gw * geometry.height);
-        skia::small_blur_into(src, width, height, stride, &factors, &factors, mask, gw, small_row);
+        small::small_blur_into(src, width, height, stride, &factors, &factors, mask, gw, small_row);
         store_rows(&mask[y0 * gw + x0..], gw, ww, wh, dst, dst_stride, store);
         return;
     }

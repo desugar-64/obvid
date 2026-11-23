@@ -911,7 +911,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     ty: Float,
     fromFrame: Boolean = false,
   ): Boolean {
-    if (isSmallBlur(radius)) return false
     if (fromFrame) {
       setMovedFrame(local.fillType)
     } else {
@@ -932,14 +931,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     }
     return true
   }
-
-  /**
-   * Whether Skia blurs at [radius] with its small blur (`SkMaskBlurFilter::blur`: σ < 2, radius < 2.6 px). That kernel
-   * is SIMD in Skia and scalar here, about 5 times slower on a whole mask (Pixel 6, a 200 dp path at 0.5–0.9 dp), so
-   * the whole-mask routes leave these builds to the Skia route; the nine-patch routes, which blur only a small mask,
-   * keep them. σ as `BlurMaskFilter(radius)` computes it (`skia::sigma_from_radius`: float, no fused multiply-add).
-   */
-  private fun isSmallBlur(radius: Float): Boolean = SIGMA_SCALE * radius + 0.5f < SMALL_BLUR_SIGMA
 
   private fun updateBorder(radius: Float) {
     if (radius != borderRadius) {
@@ -1038,7 +1029,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     when (plan) {
       ObvidNative.PLAN_SKIA -> return false
       ObvidNative.PLAN_FULL_MASK -> {
-        if (isSmallBlur(radius)) return false
         route = Route.MaskRoundRect
         // Skia's fallback: drawPath(SkPath::RRect(rrect)) through filterPath, whose device bounds are the rect.
         //
@@ -1343,7 +1333,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     offsetY: Float,
     fromFrame: Boolean = false,
   ): Boolean {
-    if (isSmallBlur(radius)) return false
     if (fromFrame) {
       setMovedFrame(path.asAndroidPath().fillType)
     } else {
@@ -1384,7 +1373,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     when (plan) {
       ObvidNative.PLAN_SKIA -> return false
       ObvidNative.PLAN_FULL_MASK -> {
-        if (isSmallBlur(radius)) return false
         // Skia's full mask of SkPath::RRect(rrect) or SkPath::Oval(rect), as in buildRoundRect; the mask bounds are
         // clipped to the bitmap grown by min(border, 128), so a rect moved partly or wholly off the bitmap is cut the
         // way Skia cuts it.
@@ -1425,7 +1413,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
    * Writes B (replace mode, so the rest of the bitmap is zeroed) and sets the route.
    */
   private fun buildInnerPathSpread(target: Bitmap, w: Int, h: Int, radius: Float, offsetX: Float, offsetY: Float): Boolean {
-    if (isSmallBlur(radius)) return false
     val image = checkNotNull(intermediate)
     val iw = image.width
     val ih = image.height
@@ -1742,12 +1729,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
   private companion object {
     const val MODE_REPLACE = 0
     const val MODE_SRC_OVER = 1
-
-    /** Android's `kBLUR_SIGMA_SCALE` (`skia::BLUR_SIGMA_SCALE`). */
-    const val SIGMA_SCALE = 0.57735f
-
-    /** Skia's small-blur limit (`skia::SMALL_BLUR_SIGMA_LIMIT`). */
-    const val SMALL_BLUR_SIGMA = 2f
 
     /** [nestedFrame]'s answers. */
     const val FRAME_UNKNOWN = 0
