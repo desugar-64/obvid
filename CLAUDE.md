@@ -1,0 +1,43 @@
+# Obvid
+
+A fast replacement for Jetpack Compose's `dropShadow` / `innerShadow` with identical pixels: the outline is drawn by
+Android's own Canvas, the blur is a NEON port of Skia's mask blur in a `no_std` Rust library. See README.md and
+docs/how-it-works.md.
+
+## Layout
+- `obvid/`: the library (`:obvid`). Kotlin API in `src/main`; Rust crate in `obvid/rust`, built by Gradle with
+  `cargo build --release --target aarch64-linux-android` and the NDK's clang as linker (compiler pinned in
+  `obvid/rust/rust-toolchain.toml`). Public API dump: `obvid/api/obvid.api`.
+- `sample/`: demo app, also the Macrobenchmark target. `benchmark/`: Microbenchmarks. `macrobenchmark/`: frame
+  benchmarks. `fixtures/`: shapes shared by tests, benchmarks and the demo. `scripts/`: benchmark runners and analysis.
+
+## Build, test, publish
+- `./gradlew :obvid:check :sample:assembleRelease`: library build, lint, API check (`:obvid:checkKotlinAbi`; after an
+  intended API change run `:obvid:updateKotlinAbi`), and the release-AAR check (`:obvid:verifyReleaseAar`).
+- `./gradlew spotlessApply`: license headers (Apache-2.0; the Skia ports listed in the root build file keep BSD-3).
+- `cd obvid/rust && cargo test --release`: host tests; the NEON tests need an arm64 host.
+- The build fails if `neon::box3::steps` stops compiling to NEON `smlal` (`:obvid:cargoBuild{Plain,Testing}Codegen`
+  disassembles the unstripped `.so`).
+- Device tests: `./gradlew :obvid:connectedDebugAndroidTest` (identity with Compose is asserted on Android 16–17).
+- `./gradlew :obvid:publishToMavenLocal`: `dev.serhiiyaremych:obvid` into `~/.m2`. Releases are published by
+  `.github/workflows/release.yml` from a `v*` tag. Each version needs a `## <version>` section in `CHANGELOG.md`
+  (`scripts/changelog.sh` checks it in CI and makes it the release text).
+- Add `--no-build-cache` if a sandbox blocks writes to `~/.gradle`.
+
+For device tests, benchmarks, profiling and traces, use the `build-and-measure` skill
+(`.claude/skills/build-and-measure/SKILL.md`).
+
+## Working rules
+- Discuss each step and get the user's approval before writing code or docs for it. Commit only when asked.
+- Rust tests live in a sibling file, `name_tests.rs` next to `name.rs`, declared with
+  `#[cfg(test)] #[path = "name_tests.rs"] mod tests;`.
+- Code comments document the code and its tricky spots, not plans or history.
+
+## Measurement rules
+- Standard Android tools only: Microbenchmark, Macrobenchmark, Perfetto, simpleperf. No home-made harness.
+- Release build, R8, AOT `speed`. Gate each run on device temperature (`scripts/lib.sh`); read the CPU clock from each
+  run's Perfetto trace; time-weight counters, never average raw samples.
+- Estimate device time before running. Sampling rule: one run for effects > 15%, both orders for 3–15%, call < 3% a
+  tie.
+- Every approximate result carries its quality loss next to it (PSNR, max error against the reference).
+- With several devices connected, always set `ANDROID_SERIAL`.

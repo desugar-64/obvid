@@ -1,0 +1,4 @@
+# Same 120-column width as the Kotlin and the comments; `Max` keeps short calls and literals on one line, as the code
+# was written before rustfmt.
+max_width = 120
+use_small_heuristics = "Max"

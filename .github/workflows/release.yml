@@ -1,0 +1,177 @@
+# Publishes a release for a tag `v<version>` (the version in obvid/build.gradle.kts):
+# - the Maven artifacts into the gh-pages branch under maven/ (earlier versions are kept; an existing version is
+#   never overwritten), served at https://desugar-64.github.io/obvid/maven;
+# - a GitHub Release with the signed demo APK and the library's native debug symbols. Its text is the version's section
+#   of CHANGELOG.md; without that section, the job stops before the build.
+# Order after the build: the files go to the run's artifacts, then into a draft release, then the Maven repository to
+# gh-pages, and last the draft is published. A failure before the gh-pages push leaves nothing public, and a new run
+# replaces the draft. A failure after it leaves a complete draft to publish by hand; a new run says so.
+#
+# The job runs in the `release` environment. Configure it in Settings > Environments with required reviewers, so that
+# every release waits for a manual approval. The signing secrets are repository secrets (Settings > Secrets and
+# variables > Actions) or secrets of that environment:
+#   SIGNING_KEYSTORE_BASE64  the demo app's keystore, base64-encoded
+#   SIGNING_KEYSTORE_PASSWORD, SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
+# GitHub Pages must serve the gh-pages branch (Settings > Pages).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the tag matches the library version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in obvid/build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Take the release notes from CHANGELOG.md
+        run: scripts/changelog.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v4
+        with:
+          # The default adds `tools`, which the SDK manager no longer has.
+          packages: platform-tools
+      - name: Install the NDK from obvid/build.gradle.kts
+        run: |
+          ndk=$(sed -n 's/^ *ndkVersion = "\(.*\)"/\1/p' obvid/build.gradle.kts)
+          sdkmanager --install "ndk;$ndk"
+      - name: Set up rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Install the toolchain and Android target from rust-toolchain.toml
+        working-directory: obvid/rust
+        run: rustup toolchain install
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Check out gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --depth=1 origin gh-pages
+            git worktree add gh-pages FETCH_HEAD
+          else
+            git worktree add --detach gh-pages
+            git -C gh-pages checkout --orphan gh-pages
+            git -C gh-pages rm -rf --quiet .
+          fi
+          if [ -d "gh-pages/maven/dev/serhiiyaremych/obvid/$VERSION" ]; then
+            # A draft here means that an earlier run pushed gh-pages and stopped before it published the release; the
+            # draft already has that run's files.
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
+              echo "Version $VERSION is on gh-pages and its GitHub Release is still a draft." \
+                "Publish the draft: gh release edit $GITHUB_REF_NAME --draft=false" >&2
+            else
+              echo "Version $VERSION is already published" >&2
+            fi
+            exit 1
+          fi
+          # The published repository starts from the one on gh-pages, so that maven-metadata.xml lists every version.
+          mkdir -p obvid/build/maven-repo
+          if [ -d gh-pages/maven ]; then cp -R gh-pages/maven/. obvid/build/maven-repo/; fi
+
+      - name: Decode the signing keystore
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          # Fail here, before the build, when a secret is missing (the build would sign with the debug key).
+          for name in SIGNING_KEYSTORE_BASE64 SIGNING_KEYSTORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "The secret $name is not set in the release environment" >&2; exit 1; fi
+          done
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Build, check and publish to build/maven-repo
+        env:
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: >-
+          ./gradlew spotlessCheck :obvid:check :obvid:assembleRelease :obvid:verifyReleaseAar :sample:assembleRelease
+          :obvid:publishAllPublicationsToPagesRepository
+
+      - name: Check that the demo APK is release-signed
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs sample/build/outputs/apk/release/sample-release.apk | tee certs.txt
+          if grep -q "CN=Android Debug" certs.txt; then echo "The demo APK is signed with the debug key" >&2; exit 1; fi
+
+      - name: Collect the release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir release-files
+          cp sample/build/outputs/apk/release/sample-release.apk "release-files/obvid-demo-$VERSION.apk"
+          (cd obvid/build/outputs/native-debug-symbols && zip -r "$GITHUB_WORKSPACE/release-files/obvid-$VERSION-native-debug-symbols.zip" .)
+
+      # Kept with the workflow run, so that the files of a run that fails later can still be inspected.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obvid-${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          path: |
+            release-files/
+            obvid/build/maven-repo/dev/serhiiyaremych/obvid/${{ steps.version.outputs.version }}/
+
+      # The release stays a draft (not public) until gh-pages has the Maven artifacts. A draft left by an earlier failed
+      # run is replaced; a published release stops the job.
+      - name: Create the GitHub Release as a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          case "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)" in
+            true) gh release delete "$GITHUB_REF_NAME" --yes ;;
+            false) echo "The GitHub Release $GITHUB_REF_NAME is already published" >&2; exit 1 ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Obvid $VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" release-files/*
+
+      - name: Push the Maven repository to gh-pages
+        run: |
+          mkdir -p gh-pages/maven
+          cp -R obvid/build/maven-repo/. gh-pages/maven/
+          touch gh-pages/.nojekyll
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish Obvid ${{ steps.version.outputs.version }}"
+          git push origin HEAD:gh-pages
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"

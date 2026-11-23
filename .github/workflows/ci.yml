@@ -1,0 +1,83 @@
+# Builds and tests every pull request and every push to main.
+#
+# While the repository is private, the arm64 runner (ubuntu-24.04-arm) may not be available on the free plan and the
+# `rust` job can then wait for a runner indefinitely; run the workflow by hand from the Actions tab
+# (workflow_dispatch) once the repository is public, or cancel the `rust` job.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    # The NEON kernels and their tests need an arm64 host.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Install the toolchain from rust-toolchain.toml
+        working-directory: obvid/rust
+        run: rustup toolchain install
+      - name: Check formatting
+        working-directory: obvid/rust
+        run: cargo fmt --check
+      # `jni` compiles only for Android, so clippy also runs on the Android target (a check: no NDK linker needed).
+      - name: Clippy
+        working-directory: obvid/rust
+        run: |
+          cargo clippy --release --all-targets -- -D warnings
+          cargo clippy --release --target aarch64-linux-android --all-features -- -D warnings
+      - name: Test
+        working-directory: obvid/rust
+        run: cargo test --release
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # A version bump without a CHANGELOG.md entry fails here, before the release tag can be pushed.
+      - name: Check that CHANGELOG.md has an entry for the library version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
+          scripts/changelog.sh "$version" > /dev/null
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v4
+        with:
+          # The default adds `tools`, which the SDK manager no longer has.
+          packages: platform-tools
+      - name: Install the NDK from obvid/build.gradle.kts
+        run: |
+          ndk=$(sed -n 's/^ *ndkVersion = "\(.*\)"/\1/p' obvid/build.gradle.kts)
+          sdkmanager --install "ndk;$ndk"
+      - name: Set up rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Install the toolchain and Android target from rust-toolchain.toml
+        working-directory: obvid/rust
+        run: rustup toolchain install
+      - uses: gradle/actions/setup-gradle@v6
+      # :obvid:check includes the Kotlin API check, the NEON codegen guard (part of the Rust build) and
+      # verifyReleaseAar (baseline profile and libobvid.so in the release AAR).
+      - name: Build and check
+        run: ./gradlew spotlessCheck :obvid:check :obvid:assembleRelease :obvid:verifyReleaseAar :sample:assembleRelease
