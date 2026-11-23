@@ -21,7 +21,8 @@ docs/how-it-works.md.
 - Device tests: `./gradlew :obvid:connectedDebugAndroidTest` (identity with Compose is asserted on Android 16–17).
 - `./gradlew :obvid:publishToMavenLocal`: `dev.serhiiyaremych:obvid` into `~/.m2`. Releases are published by
   `.github/workflows/release.yml` from a `v*` tag. Each version needs a `## <version>` section in `CHANGELOG.md`
-  (`scripts/changelog.sh` checks it in CI and makes it the release text).
+  (`scripts/changelog.sh` checks it in CI and makes it the release text). `scripts/release.sh <version>` checks a
+  clean, pushed `main`, the version, the changelog entry and green CI, then pushes the tag; the run waits for approval.
 - Add `--no-build-cache` if a sandbox blocks writes to `~/.gradle`.
 
 For device tests, benchmarks, profiling and traces, use the `build-and-measure` skill
