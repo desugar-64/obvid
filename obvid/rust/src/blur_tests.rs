@@ -351,7 +351,7 @@ fn worst_case_bars_match_scalar() {
     }
 }
 
-/// σ < 2 and the no-blur case go through the scalar port.
+/// σ < 2 (NEON `small_blur`) and the no-blur case give the scalar port's bytes.
 #[test]
 fn small_sigma_passes_through() {
     let mut rng = Rng(4);
@@ -424,7 +424,7 @@ fn into_with_stride_and_reused_scratch() {
     }
 }
 
-/// σ < 2 into the full window (the scalar port's `small_blur` straight into the caller's buffer, its row buffer in the
+/// σ < 2 into the full window (the NEON `small_blur` straight into the caller's buffer, its row buffer in the
 /// scratch): the scalar port's bytes for σ across (0.5, 2), with a destination stride wider than the output (the
 /// bytes between rows stay as they were) and one scratch reused across sizes going up and down.
 #[test]
@@ -465,6 +465,79 @@ fn small_sigma_into_matches_scalar() {
             );
         }
     }
+}
+
+/// σ < 2 through [`blur_a8_window_into`]: σ across [1/3, 2) (every radius), random sources of every kind and size
+/// up to 120 (narrower than 16 included), the full window and random partial ones, both stores, one scratch
+/// (poisoned first). Reference: the scalar port's whole blur, the window stored per pixel onto random bytes; the
+/// destination's other bytes stay as they were.
+#[test]
+fn small_sigma_window_into_matches_scalar() {
+    let mut rng = Rng(0x5A11_0002);
+    let mut scratch = Scratch::new();
+    scratch.small_row = vec![0xA5; 300];
+    scratch.small_mask = vec![0x3C; 1 << 14];
+    let mut stores = [0usize; 2];
+    for case in 0..400 {
+        let sigma = skia::NO_BLUR_SIGMA + (case as f64 + 0.5) / 400.0 * (2.0 - skia::NO_BLUR_SIGMA);
+        let size =
+            |rng: &mut Rng| if rng.below(3) == 0 { 1 + rng.below(16) as usize } else { 1 + rng.below(120) as usize };
+        let (width, height) = (size(&mut rng), size(&mut rng));
+        let stride = width + rng.below(6) as usize;
+        let kind = KINDS[case % KINDS.len()];
+        let src = mask(width, height, stride, kind, &mut rng);
+        let expected = skia::blur_a8(&src, width, height, stride, sigma);
+        let g = blur_geometry(width, height, sigma);
+        assert_eq!((g.width, g.height), (expected.width, expected.height));
+        for full in [true, false] {
+            let window = if full {
+                Window::full(g.width, g.height)
+            } else {
+                let (x0, x1) = window_axis(g.width, &mut rng);
+                let (y0, y1) = window_axis(g.height, &mut rng);
+                Window { x0, y0, x1, y1 }
+            };
+            let Window { x0, y0, x1, y1 } = window;
+            let store = if rng.below(2) == 0 { Store::Replace } else { Store::SourceOver };
+            stores[store as usize] += 1;
+            let (ww, wh) = (x1 - x0, y1 - y0);
+            let dst_stride = ww + rng.below(20) as usize;
+            let lead = rng.below(7) as usize;
+            let base: Vec<u8> = (0..lead + wh * dst_stride + 5).map(|_| rng.next() as u8).collect();
+            let mut want = base.clone();
+            for y in 0..wh {
+                for x in 0..ww {
+                    let m = expected.pixels[(y0 + y) * g.width + x0 + x];
+                    let d = &mut want[lead + y * dst_stride + x];
+                    *d = match store {
+                        Store::Replace => m,
+                        Store::SourceOver => reference_src_over(*d as u32, m as u32) as u8,
+                    };
+                }
+            }
+            let mut got = base.clone();
+            blur_a8_window_into(
+                &src,
+                width,
+                height,
+                stride,
+                sigma,
+                window,
+                &mut got[lead..],
+                dst_stride,
+                store,
+                &mut scratch,
+                InteriorSkip::Auto,
+            );
+            assert!(
+                got == want,
+                "case {case} {kind:?} {width}x{height}/{stride} sigma {sigma} {window:?} of {}x{} {store:?}",
+                g.width,
+                g.height
+            );
+        }
+    }
+    assert!(stores[0] > 300 && stores[1] > 300, "{stores:?}");
 }
 
 /// One axis of a window over a blurred line of `n` pixels: whole, one pixel, narrower than 16, touching the start,

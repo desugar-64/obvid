@@ -301,7 +301,7 @@ of Android 8 and 9, the measured difference is PSNR 42–67 dB; round rects diff
 ## Limits
 
 - [**arm64-v8a only.**](docs/limits.md#arm64-v8a-only) Other ABIs use the Compose shadows.
-- [**Some shadows are not faster:**](docs/limits.md#some-cases-use-the-skia-of-the-device) rects, blur radius 0, and blur radii below approximately 2.6 px use the blur of the device's Skia, as in Compose.
+- [**Some shadows are not faster:**](docs/limits.md#some-cases-use-the-skia-of-the-device) rects and blur radius 0 use the blur of the device's Skia, as in Compose.
 - [**Compose's hard edge stays by default.**](docs/limits.md#composes-hard-edge-stays-by-default) A Compose shadow stops at a fixed distance from the shape, so a strong glow can end at a visible line. `ShadowExtent.Full` removes it for drop shadows.
 - [**Compose 1.13 or newer, minSdk 24.**](docs/limits.md#compose-113-or-newer-minsdk-24)
 - [**Threads:**](docs/limits.md#threads) no background threads. The thread that draws a shadow builds it, as in Compose.
@@ -334,7 +334,6 @@ Ideas that were measured or scoped, but are not in 0.1.0:
 - [ ] [Fewer draw commands for shadows that scroll](docs/to-do.md#fewer-draw-commands-for-shadows-that-scroll): for tablets with a weak GPU.
 - [ ] [Drop shadows under opaque content](docs/to-do.md#drop-shadows-under-opaque-content): opt-in, skip the hidden middle.
 - [ ] [More shapes on the fast path](docs/to-do.md#more-shapes-on-the-fast-path): rects, blur radius 0, paths with spread.
-- [ ] [A NEON small blur](docs/to-do.md#a-neon-small-blur) for blur radii below approximately 2.6 px.
 - [ ] [A downsampled blur for large blur radii](docs/to-do.md#a-downsampled-blur-for-large-radii): opt-in, with its quality loss.
 - [ ] [A GPU route](docs/to-do.md#a-gpu-route) for the simplest shapes, to compare with the CPU route.
 - [ ] [More ABIs](docs/to-do.md#more-abis): 32-bit ARM and x86_64.

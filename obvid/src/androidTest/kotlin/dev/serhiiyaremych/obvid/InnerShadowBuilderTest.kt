@@ -74,6 +74,8 @@ import org.junit.runner.RunWith
  *   direction under non-zero fill, a collinear point, an edge one ulp off axis, disjoint rects, three contours, curves,
  *   no axis-aligned edge, a diagonal closing edge), fresh and reused, each against Compose with its route asserted
  *   ([FrameRouteModel] at spread ≤ 0); plus Java allocations per rebuild of a frame while its outline is kept.
+ * - [smallBlurMatchesCompose]: blur radii under 2.6 px (σ < 2, Skia's small blur) on paths, round rects and frames
+ *   (holes around Skia's frame nine-patch threshold included), the route asserted.
  * - [pathSpreadOffsetsMatchCompose]: paths with spread > 0 and radius > 0 (the mask route: Compose's intermediate placed
  *   by the newest Skia's rule, then Obvid's blur) at offsets for every placement ([placement]: clipped out, sprite,
  *   filtered, filtered with an empty cut rect): whole pixels, around the 1/32 px sprite tolerance, halves, quarters,
@@ -253,6 +255,110 @@ class InnerShadowBuilderTest {
     summary += offTargetLines(listOf("edge" to rows))
     finish("inner1-builder-edges", rows, summary)
     assertChecks(rows)
+  }
+
+  /**
+   * Blur radii under 2.6 px (σ < 2: Skia's small blur, Obvid's NEON port on the whole-mask routes): the radii of
+   * [SmallBlurCases] (px on every density, covering filter radii 1–4, and 0.5 / 0.9 dp as the rebuild benchmarks) ×
+   * `mixed`, `morph` (the mask route, with spread through the placed intermediate), `rrect16` (the nine-patch, or its
+   * full mask) and `circle` (an oval's full mask) × 48 / 200 dp × spread 0 / 8 / −8 dp × offsets zero / 4 dp / 3.25 px;
+   * the frames of [SmallBlurCases.frames] × 48 / 200 dp × spread 0 / 8 / −8 dp, one of those offsets each in turn; and
+   * frames on a 100 dp box whose hole, moved by the offset, rounds in to `2m + 3 − 1`, `2m + 3` or `2m + 3 + 1` px on
+   * one axis ([FrameRouteModel.holeFrame]) at every radius × spread 0 / −4 dp. Fresh and reused as in
+   * [builderMatchesCompose]. The checks of [builderMatchesCompose], the route (the mask route for the paths and the
+   * frames with spread unless [inexactRight], a round-rect route of Obvid's for the round rects, [FrameRouteModel]'s
+   * for the frames at spread ≤ 0), and that the px radii give σ < 2 with every border 1–4.
+   */
+  @Test
+  fun smallBlurMatchesCompose() {
+    val start = SystemClock.elapsedRealtime()
+    val labels = HashMap<Case, String>()
+    val radii = SmallBlurCases.radii(density.density)
+    val offsets = MAIN_OFFSETS.filter { it.first in setOf("zero", "dp4", "px3.25") }
+    val cases = buildList {
+      for (name in SmallBlurCases.SHAPES) for (side in listOf(48, 200)) for ((label, r) in radii) {
+        for (s in SPREADS_DP) {
+          val g = Geometry(side, side, r, s)
+          for ((offset, at) in offsets) {
+            val (ox, oy) = at(g)
+            add(Case(ShapeCase(name, catalogShape(name)), g, offset, ox, oy).also { labels[it] = label })
+          }
+        }
+      }
+      var n = 0
+      for (side in listOf(48, 200)) for ((label, r) in radii) for (s in SPREADS_DP) for (frame in SmallBlurCases.frames()) {
+        val g = Geometry(side, side, r, s)
+        val (offset, at) = offsets[n++ % offsets.size]
+        val (ox, oy) = at(g)
+        add(Case(frame, g, offset, ox, oy).also { labels[it] = label })
+      }
+      n = 0
+      for ((label, r) in radii) for (s in SmallBlurCases.HOLE_SPREADS_DP) {
+        val g = Geometry(SmallBlurCases.HOLE_SIDE_DP, SmallBlurCases.HOLE_SIDE_DP, r, s)
+        val threshold = 2 * g.border + 3
+        for (axis in 0..1) for (k in -1..1) {
+          val (offset, at) = offsets[n % offsets.size]
+          val (ox, oy) = at(g)
+          val frac = HOLE_FRACTIONS[n % HOLE_FRACTIONS.size]
+          val shape = FrameRouteModel.holeFrame(g.size.width, threshold, axis, k, frac, ox, oy, evenOdd = n % 2 == 1) ?: continue
+          val name = "hole${"xy"[axis]}${if (k < 0) "Below" else if (k > 0) "Above" else "At"}"
+          add(Case(ShapeCase(name, shape), g, offset, ox, oy).also { labels[it] = label })
+          n++
+        }
+      }
+    }
+    // The expected route: null for a round rect (either round-rect route of Obvid's).
+    fun expected(c: Case): FrameRouteModel.Decision? =
+      when (c.shape.name) {
+        in SmallBlurCases.PATH_SHAPES ->
+          FrameRouteModel.Decision(if (c.g.spread > 0f && inexactRight(c)) "Skia" else "Mask", "path")
+        in SmallBlurCases.ROUND_SHAPES -> null
+        else -> model(c, superset = true)
+      }
+    val fresh = cases.mapIndexed { i, c -> ShadowBitmapBuilder().use { b -> Row("fresh", i, c, measure(b, ShadowBitmaps(), c, false)) } }
+    val reuse = ShadowBitmapBuilder().use { b ->
+      val target = ShadowBitmaps()
+      cases.shuffled(Random(SEED)).mapIndexed { i, c -> Row("reuse", i, c, measure(b, target, c, preserve = i % 2 == 1)) }
+    }
+    val all = fresh + reuse
+    val seconds = (SystemClock.elapsedRealtime() - start) / 1000.0
+    fun sigma(c: Case) = SmallBlurCases.sigma(c.g.radius)
+    val summary = ArrayList<String>()
+    summary += summaryLines(listOf("fresh" to fresh, "reuse" to reuse))
+    for ((label, group) in all.groupBy { labels.getValue(it.case) }) {
+      val g = group.first().case.g
+      summary += "  radius $label (${g.radius} px, σ ${sigma(group.first().case)}, border ${g.border}): identical " +
+        "${group.count { it.o.identical }} / ${group.size}, max diff ${group.maxOf { it.o.diff.max }}; routes ${routeCounts(group)}"
+    }
+    val decisions = all.associateWith { expected(it.case) }
+    fun asExpected(row: Row) = decisions.getValue(row)?.let { it.route == row.o.route } ?: (row.o.route in SmallBlurCases.ROUND_ROUTES)
+    for ((kind, group) in all.groupBy { decisions.getValue(it)?.kind ?: "roundRect" }.toSortedMap()) {
+      summary += "  model $kind: identical ${group.count { it.o.identical }} / ${group.size}; routes ${routeCounts(group)}"
+    }
+    val holes = all.filter { (decisions.getValue(it)?.holeX ?: FrameRouteModel.NO_HOLE) != FrameRouteModel.NO_HOLE }
+    for ((key, group) in holes.groupBy { checkNotNull(decisions.getValue(it)).holeLabel to it.case.g.border }.toList().sortedBy { it.first.toString() }) {
+      summary += "  hole − (2m + 3) ${key.first}, border ${key.second}: identical ${group.count { it.o.identical }} / " +
+        "${group.size}; routes ${routeCounts(group)}"
+    }
+    summary += "routes as expected ${all.count { asExpected(it) }} / ${all.size}"
+    summary += "σ < 2 in ${all.count { sigma(it.case) < 2f }} / ${all.size} builds, borders " +
+      "${all.filter { sigma(it.case) < 2f }.map { it.case.g.border }.toSortedSet()}"
+    summary += footer(seconds)
+    summary += offTargetLines(listOf("fresh" to fresh, "reuse" to reuse))
+    finish("inner1-builder-smallblur", all, summary)
+
+    assertChecks(all)
+    val px = cases.filter { labels.getValue(it).startsWith("px") }
+    assertTrue("px radii with σ ≥ 2: ${px.filter { sigma(it) >= 2f }.map { it.key }}", px.all { sigma(it) < 2f })
+    assertEquals("borders of the px radii", setOf(1, 2, 3, 4), px.map { it.g.border }.toSet())
+    for (row in all) {
+      val d = decisions.getValue(row)
+      if (d != null) {
+        assertEquals("route of ${row.case.key} (${d.kind})", d.route, row.o.route)
+      } else {
+        assertTrue("route of ${row.case.key}: ${row.o.route}", row.o.route in SmallBlurCases.ROUND_ROUTES)
+      }
+    }
   }
 
   @Test

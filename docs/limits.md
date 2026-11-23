@@ -7,9 +7,8 @@ log warning).
 
 ## Some cases use the Skia of the device
 
-As in Compose: rects and rect-shaped paths, radius 0, inner shadows of paths with a positive spread at some offsets, and
-very small radii (less than approximately 2.6 px, for example 0.5 dp on a Pixel 6) on all shapes except round rects with
-equal corners. These cases agree with the Compose output of that device and are only slightly faster.
+As in Compose: rects and rect-shaped paths, radius 0, and inner shadows of paths with a positive spread at some offsets.
+These cases agree with the Compose output of that device and are only slightly faster.
 
 ## Compose's hard edge stays by default
 

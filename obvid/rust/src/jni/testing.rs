@@ -57,7 +57,7 @@ pub extern "system" fn Java_dev_serhiiyaremych_obvid_ObvidTesting_abiVersion(_en
 
 /// `ObvidTesting.blurA8`: a tightly packed A8 mask of `width` × `height` blurred at the sigma Android derives
 /// from `BlurMaskFilter(radius_px, NORMAL)`, by [`skia::blur_a8`] (the scalar port) or, with `neon` ≠ 0, by
-/// [`blur::blur_a8_with`] (NEON for σ ≥ 2, the scalar port's code below; the same bytes). Returns the blurred mask,
+/// [`blur::blur_a8_with`] (NEON; the same bytes). Returns the blurred mask,
 /// grown by `ObvidNative.builderBorder` on each side (Skia's `PrepareDestination` layout). Copies in and out of
 /// Java arrays (allocates the output, and the scratch with `neon`, per call); throws a `RuntimeException` if `src`
 /// is null or too short. 64-bit Arm only.

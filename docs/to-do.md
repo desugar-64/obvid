@@ -36,13 +36,6 @@ times faster than Compose. Inner shadows of paths with spread use the Obvid blur
 path at a fractional offset with filtering, and this takes most of the time: 1.5–1.6 times faster than Compose, against
 7–10 times without spread. The next step is to keep that drawn mask while only the radius changes.
 
-## A NEON small blur
-
-For radii less than approximately 2.6 px, Skia uses a different blur, and Obvid has only a scalar version of it. On a
-whole mask, that version was 5 times slower than Compose, so these shadows use the Skia of the device (1.08–1.11 times
-faster than Compose). Round rects keep the Obvid nine-patch at these radii, but at 0.9 dp on a Pixel 6, one rebuild
-takes 0.31 ms against 0.25 ms in Compose. A NEON version will bring these shadows back to the Obvid blur.
-
 ## A downsampled blur for large radii
 
 This option will be opt-in and approximate. Its quality loss (PSNR, max error) will be published with it.

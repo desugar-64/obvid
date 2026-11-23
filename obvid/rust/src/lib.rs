@@ -7,8 +7,9 @@
 //! still rasterized by the device's `Canvas`).
 //!
 //! - [`skia`]: the scalar port of Skia's mask blur, the definition of "correct" for everything else.
-//! - `neon`: reusable NEON building blocks (transpose, the three-box recurrence, skip flags, A8 stores).
-//! - [`blur`]: the exact blur, NEON for σ ≥ 2, with reused scratch: the whole mask into a caller buffer, or only a
+//! - `neon`: reusable NEON building blocks (transpose, the three-box recurrence, skip flags, A8 stores, the σ < 2
+//!   direct blur).
+//! - [`blur`]: the exact blur in NEON, with reused scratch: the whole mask into a caller buffer, or only a
 //!   window of it straight into a destination (plain or srcover stores).
 //! - [`shadow`]: the bitmap pipeline (blur the window of a mask that the shadow bitmap keeps straight into it), and
 //!   `shadow::nine`, Skia's nine-patch of a blurred round rect (Android 16–17's geometry); `innerShadow` uses both

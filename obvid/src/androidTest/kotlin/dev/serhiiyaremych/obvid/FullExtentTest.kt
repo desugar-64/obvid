@@ -90,15 +90,18 @@ import androidx.compose.ui.graphics.Canvas as ComposeCanvas
  * [extentSwitchRebuilds]: a live node under `LocalShadowExtent` switched Compose → Full → Compose, for both overloads:
  * one build per switch, one store entry, the bitmap's size and origin of each extent; and a store keeps a Compose
  * and a Full entry of one geometry apart. Output: `full-extent-switch-summary.txt`.
+ *
+ * [smallBlurFullExtentMatchesAndroid]: [fullExtentMatchesAndroid]'s checks at blur radii under 2.6 px (σ < 2, Skia's
+ * small blur), with the route asserted. Output: `full-extent-smallblur.csv`, `full-extent-smallblur-summary.txt`.
  */
 @RunWith(AndroidJUnit4::class)
 class FullExtentTest {
 
   @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
-  private class Case(val shape: ShapeCase, val widthDp: Int, val heightDp: Int, val radiusDp: Int, val spreadDp: Int) {
+  private class Case(val shape: ShapeCase, val widthDp: Int, val heightDp: Int, val radiusDp: Float, val spreadDp: Int) {
     val label
-      get() = "${shape.name} ${widthDp}x$heightDp r$radiusDp s$spreadDp"
+      get() = "${shape.name} ${widthDp}x$heightDp r${fmt(radiusDp)} s$spreadDp"
   }
 
   private val cases =
@@ -108,11 +111,16 @@ class FullExtentTest {
           ShapeCase("frame", FrameShape(evenOdd = false)) +
           ShapeCase("rect", catalogShape("rect"))
       for (shape in shapes) for (sizeDp in listOf(48, 200)) for (radiusDp in listOf(4, 24, 36)) {
-        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, radiusDp, spreadDp))
+        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, radiusDp.toFloat(), spreadDp))
       }
       val pill = ShapeCase("pill", RoundedCornerShape(50))
-      for (radiusDp in listOf(24, 36)) for (spreadDp in listOf(0, 4)) add(Case(pill, 320, 56, radiusDp, spreadDp))
+      for (radiusDp in listOf(24, 36)) for (spreadDp in listOf(0, 4)) add(Case(pill, 320, 56, radiusDp.toFloat(), spreadDp))
     }
+
+  /** The shapes of [cases] that take routes of Obvid's (not `rect`, which keeps the device Skia's). */
+  private fun smallBlurShapes(): List<ShapeCase> =
+    listOf("rrect16", "mixed", "circle", "morph").map { ShapeCase(it, catalogShape(it)) } +
+      ShapeCase("frame", FrameShape(evenOdd = false))
 
   private class Outcome(
     val case: Case,
@@ -139,7 +147,7 @@ class FullExtentTest {
           case.shape.name,
           case.widthDp,
           case.heightDp,
-          case.radiusDp,
+          fmt(case.radiusDp),
           case.spreadDp,
           route,
           w,
@@ -167,6 +175,77 @@ class FullExtentTest {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
     val density = Density(context)
     val outcomes = cases.map { c -> ShadowBitmapBuilder().use { b -> runCase(density, b, c) } }
+    report(density, outcomes, CSV_NAME, SUMMARY_NAME)
+  }
+
+  /**
+   * [fullExtentMatchesAndroid]'s checks at blur radii under 2.6 px (σ < 2, Skia's small blur): the radii of
+   * [SmallBlurCases] (px on every density, covering filter radii 1–4, and 0.5 / 0.9 dp) × `rrect16`, `mixed`,
+   * `circle`, `morph` and the frame × 48 / 200 dp × spread 0 / 8 dp. Also asserted: the route (the mask route for the
+   * paths, a round-rect route of Obvid's for the round rects, [FrameRouteModel]'s for the frame, moved by the full
+   * extent's translate, and the Skia route for it with spread), and that the px radii give σ < 2 with every border
+   * 1–4. Output (subdir [RESULTS_DIR]): `full-extent-smallblur.csv`, `full-extent-smallblur-summary.txt`.
+   */
+  @Test
+  fun smallBlurFullExtentMatchesAndroid() {
+    check(NativeShadows.isAvailable)
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val density = Density(context)
+    val radii = SmallBlurCases.radii(density.density)
+    val smallCases = buildList {
+      for (shape in smallBlurShapes()) for (sizeDp in listOf(48, 200)) for ((_, r) in radii) {
+        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, r, spreadDp))
+      }
+    }
+    val pxRadii = radii.filter { it.first.startsWith("px") }.map { it.second }.toSet()
+    val outcomes = smallCases.map { c -> ShadowBitmapBuilder().use { b -> runCase(density, b, c) } }
+    val expected =
+      outcomes.associateWith { o ->
+        val c = o.case
+        val radius = with(density) { c.radiusDp.dp.toPx() }
+        when (c.shape.name) {
+          in SmallBlurCases.PATH_SHAPES -> ShadowBitmapBuilder.Route.Mask.name
+          in SmallBlurCases.ROUND_SHAPES -> null
+          else ->
+            if (c.spreadDp > 0) {
+              ShadowBitmapBuilder.Route.Skia.name
+            } else {
+              // The frame drawn under the window's translate (−origin) and Compose's translate by the radius.
+              val size = with(density) { Size(c.widthDp.dp.roundToPx().toFloat(), c.heightDp.dp.roundToPx().toFloat()) }
+              val outline = c.shape.shape.createOutline(size, LayoutDirection.Ltr, density)
+              val tx = (-o.originX).toFloat() + radius
+              val ty = (-o.originY).toFloat() + radius
+              FrameRouteModel.decide(FrameRouteModel.canonicalPoints(outline), true, tx, ty, radius).route
+            }
+        }
+      }
+    fun sigma(c: Case) = SmallBlurCases.sigma(with(density) { c.radiusDp.dp.toPx() })
+    fun border(c: Case) = ObvidNative.builderBorder(with(density) { c.radiusDp.dp.toPx() })
+    val extra =
+      listOf(
+        "routes as expected ${outcomes.count { o -> expected.getValue(o)?.let { it == o.route } ?: (o.route in SmallBlurCases.ROUND_ROUTES) }} / " +
+          "${outcomes.size}",
+        "σ < 2 in ${outcomes.count { sigma(it.case) < 2f }} / ${outcomes.size} builds, borders " +
+          "${outcomes.filter { sigma(it.case) < 2f }.map { border(it.case) }.toSortedSet()}",
+      )
+    report(density, outcomes, SMALL_CSV_NAME, SMALL_SUMMARY_NAME, extra)
+
+    val px = smallCases.filter { it.radiusDp in pxRadii }
+    assertTrue("px radii with σ ≥ 2: ${px.filter { sigma(it) >= 2f }.map { it.label }}", px.all { sigma(it) < 2f })
+    assertEquals("borders of the px radii", setOf(1, 2, 3, 4), px.map { border(it) }.toSet())
+    for (o in outcomes) {
+      val route = expected.getValue(o)
+      if (route != null) {
+        assertEquals("route: ${o.csv()}", route, o.route)
+      } else {
+        assertTrue("route: ${o.csv()}", o.route in SmallBlurCases.ROUND_ROUTES)
+      }
+    }
+  }
+
+  /** Writes [outcomes]' rows and summary (plus [extra] lines) and asserts [fullExtentMatchesAndroid]'s checks. */
+  private fun report(density: Density, outcomes: List<Outcome>, csvName: String, summaryName: String, extra: List<String> = emptyList()) {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
     val rows = ArrayList<String>()
     rows += HEADER
     for (o in outcomes) {
@@ -190,14 +269,15 @@ class FullExtentTest {
       "inside Compose's window, Obvid vs Compose's bitmap: differ in " +
         "${outcomes.count { !it.insideCompose.identical }} / " +
         "${outcomes.size} cases, max diff ${outcomes.maxOf { it.insideCompose.max }} (recorded, not asserted)"
+    summary += extra
     summary += "API ${Build.VERSION.SDK_INT}, ${Build.MODEL}, density ${density.density}"
     if (!TargetSkia.isDevice) {
       summary += "${TargetSkia.offTargetLabel.replace("this device's Compose", "this device's Skia")} (alpha): " +
         DiffTally().also { t -> outcomes.forEach { t.add(it.truth) } }
     }
     summary.forEach { Log.i(TAG, it) }
-    writeResults(context, CSV_NAME, rows, RESULTS_DIR)
-    writeResults(context, SUMMARY_NAME, summary, RESULTS_DIR)
+    writeResults(context, csvName, rows, RESULTS_DIR)
+    writeResults(context, summaryName, summary, RESULTS_DIR)
 
     for (o in outcomes) {
       val ctx = o.csv()
@@ -541,6 +621,8 @@ class FullExtentTest {
     const val CSV_NAME = "full-extent-builder.csv"
     const val SUMMARY_NAME = "full-extent-builder-summary.txt"
     const val SWITCH_SUMMARY_NAME = "full-extent-switch-summary.txt"
+    const val SMALL_CSV_NAME = "full-extent-smallblur.csv"
+    const val SMALL_SUMMARY_NAME = "full-extent-smallblur-summary.txt"
     const val HEADER =
       "model,api,shape,widthDp,heightDp,radiusDp,spreadDp,route,w,h,originX,originY,composeW,composeH,pixelRatio," +
         "identical,maxDiff,diffPixels,extraNonZeroA,outsideNonZeroB,ringNonZero,insideComposeMax,insideComposePixels"
@@ -552,5 +634,7 @@ class FullExtentTest {
     val SWITCH_RADIUS = 36.dp
     val SWITCH_SPREAD = 4.dp
     const val TAG_BRUSH_CELL = "full-extent-brush-cell"
+
+    fun fmt(f: Float) = if (f == f.toInt().toFloat()) f.toInt().toString() else f.toString()
   }
 }

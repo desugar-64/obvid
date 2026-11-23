@@ -60,9 +60,8 @@ On the CPU, Skia selects a route for each shape. Obvid uses the same routes:
   change of offset, size, or spread only stretches the copy again.
 - **Frames** (two nested rects): the rect nine-patch of Skia, the same stretch without a center.
 - **Routes that stay on the Skia of the device:** rects and rect-shaped paths (the analytic rect blur of Skia), radius
-  0, inner shadows of paths with positive spread at some offsets, drop-shadow frames with positive spread, and radii
-  less than approximately 2.6 px (σ < 2, the small blur of Skia) except on nine-patch routes. For these routes, Obvid
-  runs the Compose calls into its own bitmap.
+  0, inner shadows of paths with positive spread at some offsets, and drop-shadow frames with positive spread. For
+  these routes, Obvid runs the Compose calls into its own bitmap.
 
 If the device is not arm64 or the native library does not load, the modifiers are the Compose modifiers.
 
@@ -70,7 +69,8 @@ If the device is not arm64 or the native library does not load, the modifiers ar
 
 Android changes the radius to sigma: `σ = 0.57735·r + 0.5` in `float` (r in px). `SkBlurMaskFilterImpl.cpp` sets a
 maximum of 128. Below σ = 2 (radius less than approximately 2.6 px), `SkMaskBlurFilter.cpp` convolves directly with the
-discrete Gaussian of `SkGaussFilter`, in 8.8 fixed point. Obvid runs a scalar port of that code.
+discrete Gaussian of `SkGaussFilter`, in 8.8 fixed point. Obvid runs that code in NEON, 16 pixels at a time, with the
+same bytes as a scalar port of it.
 
 From σ = 2, the `PlanGauss` of Skia approximates the Gaussian with three box filters:
 

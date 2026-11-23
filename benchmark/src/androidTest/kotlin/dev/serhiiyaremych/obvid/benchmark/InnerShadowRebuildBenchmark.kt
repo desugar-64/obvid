@@ -47,8 +47,8 @@ import org.junit.runners.Parameterized
  * full mask), `circle` an oval (full mask), `mixed` (corners (16, 16, 4, 4) dp, as [DropShadowRebuildBenchmark]'s)
  * and `morph` (Cookie9Sided↔Pill at 0.5) are paths (Obvid's mask route, with or without spread), `rect` takes the Skia
  * route (Compose's own calls on Obvid's reused bitmap), and `frame` (two nested rect contours of one path,
- * [FrameShape]; Skia blurs it with its rect nine-patch) that nine-patch on Obvid's pipeline. One case:
- * `Class#draw[rebuild_round_200dp_r24_s0]`.
+ * [FrameShape]; Skia blurs it with its rect nine-patch) that nine-patch on Obvid's pipeline. `rebuild` at 0.5 and
+ * 0.9 dp (`r0p5`, `r0p9`) runs Skia's small blur (σ < 2). One case: `Class#draw[rebuild_round_200dp_r24_s0]`.
  *
  * Cases prefixed `cpu_` draw Obvid's `innerShadow` instead, through [InnerShadowDrawHook], which does what Obvid's
  * modifier node does in a frame: a new `Shadow` with the same walk each iteration rebuilds the node's sole store entry
@@ -65,7 +65,7 @@ class InnerShadowRebuildBenchmark(private val case: Case) {
     val sizePx = with(density) { case.size.dp.toPx() }
     val size = Size(sizePx, sizePx)
     val shape = createShape(case.shape)
-    val radii = RadiusWalk(case.radius.toFloat(), density.density)
+    val radii = RadiusWalk(case.radius, density.density)
     val sizes = SizeWalk(sizePx)
     val spriteOffset =
       DpOffset(wholePixelDp(BaseOffset.x.value, density.density).dp, wholePixelDp(BaseOffset.y.value, density.density).dp)
@@ -112,18 +112,20 @@ class InnerShadowRebuildBenchmark(private val case: Case) {
 
   /**
    * One benchmark case; [toString] is the JUnit parameter name (`<mode>_<shape>_<size>dp_r<radius>_s<spread>`,
-   * prefixed `cpu_` for Obvid's).
+   * prefixed `cpu_` for Obvid's; a fractional radius is written with `p` for the point, `r0p5` for 0.5 dp).
    */
   class Case(
     val mode: Mode,
     val shape: String,
     val size: Int,
-    val radius: Int,
+    val radius: Float,
     val spread: Int,
     val impl: Impl = Impl.Compose,
   ) {
-    override fun toString() =
-      (if (impl == Impl.Cpu) "cpu_" else "") + "${mode.name.lowercase()}_${shape}_${size}dp_r${radius}_s$spread"
+    override fun toString(): String {
+      val r = if (radius % 1f == 0f) radius.toInt().toString() else radius.toString().replace('.', 'p')
+      return (if (impl == Impl.Cpu) "cpu_" else "") + "${mode.name.lowercase()}_${shape}_${size}dp_r${r}_s$spread"
+    }
   }
 
   companion object {
@@ -138,23 +140,33 @@ class InnerShadowRebuildBenchmark(private val case: Case) {
     fun cases(): List<Case> {
       fun all(impl: Impl) =
         listOf(
-          Case(Mode.Rebuild, "round", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "round", 48, 24, 0, impl),
-          Case(Mode.Rebuild, "circle", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "mixed", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "morph", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "rect", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "frame", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "morph", 200, 24, 8, impl),
-          Case(Mode.Offset, "round", 200, 24, 0, impl),
-          Case(Mode.Color, "round", 200, 24, 0, impl),
-          Case(Mode.Rebuild, "mixed", 200, 24, 8, impl),
-          Case(Mode.Sprite, "morph", 200, 24, 8, impl),
-          Case(Mode.Sprite, "mixed", 200, 24, 8, impl),
-          Case(Mode.Size, "round", 200, 24, 0, impl),
-        )
+          Case(Mode.Rebuild, "round", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "round", 48, 24f, 0, impl),
+          Case(Mode.Rebuild, "circle", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "mixed", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "morph", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "rect", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "frame", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "morph", 200, 24f, 8, impl),
+          Case(Mode.Offset, "round", 200, 24f, 0, impl),
+          Case(Mode.Color, "round", 200, 24f, 0, impl),
+          Case(Mode.Rebuild, "mixed", 200, 24f, 8, impl),
+          Case(Mode.Sprite, "morph", 200, 24f, 8, impl),
+          Case(Mode.Sprite, "mixed", 200, 24f, 8, impl),
+          Case(Mode.Size, "round", 200, 24f, 0, impl),
+        ) + smallBlurs(impl)
       return all(Impl.Compose) + all(Impl.Cpu)
     }
+
+    /**
+     * Rebuilds below σ = 2 (Skia's small blur, radius < 2.6 px), as [DropShadowRebuildBenchmark]'s: 0.5 and 0.9 dp,
+     * the low and high end of that range on a 2.625 density (σ 1.26 and 1.86). `round` takes the nine-patch route (a
+     * small mask), the others blur the whole mask.
+     */
+    private fun smallBlurs(impl: Impl) =
+      listOf("round", "mixed", "morph", "circle").flatMap { shape ->
+        listOf(0.5f, 0.9f).map { Case(Mode.Rebuild, shape, 200, it, 0, impl) }
+      }
 
     /**
      * A dp value near [nearDp] that is a whole number of pixels at [density] exactly as Compose converts it
