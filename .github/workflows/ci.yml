@@ -23,7 +23,7 @@ jobs:
     # The NEON kernels and their tests need an arm64 host.
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up rustup
         run: |
           if ! command -v rustup >/dev/null; then
@@ -49,17 +49,17 @@ jobs:
   android:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # A version bump without a CHANGELOG.md entry fails here, before the release tag can be pushed.
       - name: Check that CHANGELOG.md has an entry for the library version
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
           scripts/changelog.sh "$version" > /dev/null
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           # The default adds `tools`, which the SDK manager no longer has.
           packages: platform-tools
@@ -76,7 +76,7 @@ jobs:
       - name: Install the toolchain and Android target from rust-toolchain.toml
         working-directory: obvid/rust
         run: rustup toolchain install
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       # :obvid:check includes the Kotlin API check, the NEON codegen guard (part of the Rust build) and
       # verifyReleaseAar (baseline profile and libobvid.so in the release AAR).
       - name: Build and check
