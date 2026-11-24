@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - Shadows with blur radii below approximately 2.6 px (for example 0.5–0.9 dp on a Pixel 6) use the Obvid blur on all
   shapes, with a NEON version of the small blur of Skia ([#2](https://github.com/desugar-64/obvid/issues/2)). One

@@ -55,7 +55,7 @@ Obvid is published to a Maven repository on GitHub Pages. Add the repository and
 dependencyResolutionManagement { repositories { maven("https://desugar-64.github.io/obvid/maven") } }
 
 // build.gradle.kts
-dependencies { implementation("dev.serhiiyaremych:obvid:0.1.0") }
+dependencies { implementation("dev.serhiiyaremych:obvid:0.1.1") }
 ```
 
 Then change the imports. The rest of your code stays the same: the modifiers take the same parameters, including the
@@ -327,7 +327,7 @@ benchmarks, profiling, and tracing; it is written for coding agents, but also wo
 
 ## To do
 
-Ideas that were measured or scoped, but are not in 0.1.0:
+Ideas that were measured or scoped, but are not in 0.1.1:
 
 - [ ] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds.
 - [ ] [Faster first builds on little cores](docs/to-do.md#faster-first-builds-on-little-cores): 3.5 ms on a Pad 5 little core after idle.

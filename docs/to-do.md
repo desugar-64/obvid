@@ -1,6 +1,6 @@
 # To do
 
-Ideas that were measured or scoped, but are not in 0.1.0.
+Ideas that were measured or scoped, but are not in 0.1.1.
 
 ## Parallel builds when a screen opens
 
