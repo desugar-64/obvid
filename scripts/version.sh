@@ -8,7 +8,8 @@
 #
 # Usage: scripts/version.sh [--new | --tag <tag>]
 #   (none)       CI on main and pull requests: the version may equal the newest tag (released) or be newer (bumped).
-#   --new        scripts/release.sh, before the tag: the version is newer than every tag, and `## Unreleased` in
+#   --new        scripts/release.sh, before the tag: the version is newer than every tag, the bump is at least what
+#                the public API change since that tag needs (scripts/api_bump.sh), and `## Unreleased` in
 #                CHANGELOG.md is empty (a change merged after the bump would be missing from the release text).
 #   --tag <tag>  the release workflow: the tag is v<version>, and `## Unreleased` is empty.
 set -euo pipefail
@@ -53,6 +54,17 @@ if [ -n "$newest" ]; then
   [ "$v" -ge "$n" ] || fail "version $version is older than the newest tag $newest"
   if [ "$mode" = --new ] && [ "$v" -eq "$n" ]; then
     fail "version $version is already released ($newest): run scripts/bump.sh first"
+  fi
+  # Before the tag: the bump is at least what the public API change since that release needs (also for an API change
+  # merged after the bump).
+  if [ "$mode" = --new ]; then
+    IFS=. read -r a b _ <<<"${newest#v}"
+    IFS=. read -r x y _ <<<"$version"
+    if [ "$x" != "$a" ]; then bump=2; elif [ "$y" != "$b" ]; then bump=1; else bump=0; fi
+    need=$(scripts/api_bump.sh "$newest") || exit 1
+    case "$need" in patch) r=0 ;; minor) r=1 ;; major) r=2 ;; esac
+    [ "$bump" -ge "$r" ] ||
+      fail "the public API change since $newest (diff above) needs a $need bump, but $version is smaller"
   fi
 fi
 

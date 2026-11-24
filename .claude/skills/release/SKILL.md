@@ -18,7 +18,10 @@ release cannot be taken back: only start one when the user asks for it in their 
   `.github/workflows/release.yml`, which runs to the end with no approval. Artifact names come from the version, not
   from the tag.
 - **SemVer, under 1.0:** a change that breaks the public API (`obvid/api/obvid.api`) is a `minor` bump; everything
-  else is a `patch`. `major` waits for 1.0.
+  else is a `patch`. `major` waits for 1.0. `scripts/api_bump.sh` compares the API record with the last release: a
+  removed or changed line is a break, only new lines are not. `bump.sh` and `release.sh` refuse a smaller bump and
+  print the API diff. A new enum entry counts as compatible, but it breaks an exhaustive `when` in an app: consider a
+  `minor` for it.
 - **Changelog:** every pull request that changes what users get adds its line under `## Unreleased` in
   `CHANGELOG.md`. At release time that section becomes the version's section and the release text.
 - **Checks** (`scripts/version.sh`; CI runs it on every push and pull request, `release.sh` and the release workflow run
