@@ -7,9 +7,7 @@
 # gh-pages, and last the draft is published. A failure before the gh-pages push leaves nothing public, and a new run
 # replaces the draft. A failure after it leaves a complete draft to publish by hand; a new run says so.
 #
-# Only the repository's admins can push a `v*` tag (a tag ruleset); the tag starts the release, with no further
-# approval. The job runs in the `release` environment, which takes only `v*` tags. The signing secrets are repository
-# secrets (Settings > Secrets and variables > Actions) or secrets of that environment:
+# The signing secrets (repository secrets, or secrets of the `release` environment):
 #   SIGNING_KEYSTORE_BASE64  the demo app's keystore, base64-encoded
 #   SIGNING_KEYSTORE_PASSWORD, SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
 # GitHub Pages must serve the gh-pages branch (Settings > Pages).
