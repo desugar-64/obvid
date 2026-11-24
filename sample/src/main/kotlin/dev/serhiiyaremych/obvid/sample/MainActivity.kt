@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.serhiiyaremych.obvid.LocalShadowBuilds
 import dev.serhiiyaremych.obvid.sample.app.DemoApp
 import dev.serhiiyaremych.obvid.sample.discover.DiscoverPhotos
 import dev.serhiiyaremych.obvid.sample.discover.DiscoverRevealScenario
@@ -108,7 +109,10 @@ class MainActivity : ComponentActivity() {
       enableEdgeToEdge(bars, bars)
     }
     setContent {
-      CompositionLocalProvider(LocalShadowImpl provides shadowImpl) {
+      CompositionLocalProvider(
+        LocalShadowImpl provides shadowImpl,
+        LocalShadowBuilds provides readParallelBuildsSetting(this),
+      ) {
         Box(Modifier.fillMaxSize().background(dark ?: Color(0xFFF2F2F2)).safeDrawingPadding(), contentAlignment = Alignment.Center) {
           Scenario(scenario)
           // Off in benchmarks (`hud` defaults to false), so the measured screen holds only the scenario.

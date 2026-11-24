@@ -29,10 +29,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import dev.serhiiyaremych.obvid.LocalShadowBuilds
 import dev.serhiiyaremych.obvid.sample.LocalShadowImpl
 import dev.serhiiyaremych.obvid.sample.ShadowImpl
+import dev.serhiiyaremych.obvid.sample.readParallelBuildsSetting
 import kotlinx.coroutines.flow.first
 
 /** Navigation transition, ms (as `t6_nav`: slide by a fifth of the width plus fade). */
@@ -47,11 +50,15 @@ private const val NavMillis = 350
 @Composable
 fun DiscoverScreen(impl: ShadowImpl, reveal: Boolean) {
   val palette = DiscoverPalette.current
+  // Around the reveal's warm-up row too: it loads the workers' code before the reveal, as it does the library's.
+  val builds = readParallelBuildsSetting(LocalContext.current)
   Box(Modifier.fillMaxSize().background(palette.brushes.background).semantics { testTagsAsResourceId = true }) {
-    when {
-      !DiscoverPhotos.ready -> Splash()
-      reveal -> DiscoverReveal { DiscoverApp(impl) }
-      else -> DiscoverApp(impl)
+    CompositionLocalProvider(LocalShadowBuilds provides builds) {
+      when {
+        !DiscoverPhotos.ready -> Splash()
+        reveal -> DiscoverReveal { DiscoverApp(impl) }
+        else -> DiscoverApp(impl)
+      }
     }
   }
 }
