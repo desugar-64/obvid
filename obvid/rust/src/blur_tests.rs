@@ -424,6 +424,47 @@ fn into_with_stride_and_reused_scratch() {
     }
 }
 
+/// Scratch buffers that are already large enough and full of junk give the same bytes as fresh ones: every byte the
+/// kernels read is written or zeroed in the call, never taken from an earlier call (a buffer that does not grow keeps
+/// the bytes of the last call).
+#[test]
+fn junk_in_scratch_does_not_matter() {
+    let mut rng = Rng(12);
+    for (n, &(width, height, sigma)) in
+        [(300, 200, 37.0), (17, 9, 2.0), (5, 70, 64.0), (64, 64, 100.0), (33, 33, 1.5), (40, 3, 128.0)].iter().enumerate()
+    {
+        for skip in [InteriorSkip::Off, InteriorSkip::Auto, InteriorSkip::Always] {
+            let src = mask(width, height, width, KINDS[n % KINDS.len()], &mut rng);
+            let expected = blur_a8_with(&src, width, height, width, sigma, skip);
+            let g = blur_geometry(width, height, sigma);
+            let mut scratch = Scratch::new();
+            for v in [
+                &mut scratch.hist,
+                &mut scratch.out,
+                &mut scratch.inter,
+                &mut scratch.hflags,
+                &mut scratch.vflags,
+                &mut scratch.small_row,
+                &mut scratch.small_mask,
+            ] {
+                *v = vec![0xA5; 1 << 20];
+            }
+            // A window that is not the full mask, so σ < 2 also goes through `small_mask`.
+            let window = Window { x0: 1, y0: 1, x1: g.width, y1: g.height };
+            let (ww, wh) = (g.width - 1, g.height - 1);
+            let mut dst = vec![0u8; ww * wh];
+            blur_a8_window_into(&src, width, height, width, sigma, window, &mut dst, ww, Store::Replace, &mut scratch, skip);
+            for y in 0..wh {
+                assert_eq!(
+                    &dst[y * ww..(y + 1) * ww],
+                    &expected.pixels[(y + 1) * g.width + 1..(y + 2) * g.width],
+                    "case {n} {skip:?} row {y}"
+                );
+            }
+        }
+    }
+}
+
 /// σ < 2 into the full window (the NEON `small_blur` straight into the caller's buffer, its row buffer in the
 /// scratch): the scalar port's bytes for σ across (0.5, 2), with a destination stride wider than the output (the
 /// bytes between rows stay as they were) and one scratch reused across sizes going up and down.
