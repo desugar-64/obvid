@@ -13,10 +13,9 @@ tag=${1:?usage: scripts/api_bump.sh <tag>}
 file=obvid/api/obvid.api
 
 cd "$(git rev-parse --show-toplevel)"
-git rev-parse -q --verify "refs/tags/$tag" > /dev/null ||
-  git fetch --quiet origin "refs/tags/$tag:refs/tags/$tag" ||
-  { echo "api_bump: cannot fetch the tag $tag" >&2; exit 1; }
-old=$(git show "$tag:$file") || { echo "api_bump: $tag has no $file" >&2; exit 1; }
+# Always the tag on GitHub, never a local tag of the same name.
+git fetch --quiet --no-tags origin "refs/tags/$tag" || { echo "api_bump: cannot fetch the tag $tag" >&2; exit 1; }
+old=$(git show "FETCH_HEAD:$file") || { echo "api_bump: $tag has no $file" >&2; exit 1; }
 new=$(cat "$file")
 major=${tag#v}
 major=${major%%.*}
@@ -26,8 +25,16 @@ if [ "$old" = "$new" ]; then
   exit 0
 fi
 diff -u --label "$file at $tag" --label "$file now" <(echo "$old") <(echo "$new") >&2 || true
-# Lines of the release's record that the current record lacks, duplicates counted (each class ends with `}`).
-removed=$(comm -23 <(sort <<<"$old") <(sort <<<"$new"))
+
+# Each line with its class header in front, so that a member moved to another class counts as removed from the first.
+# Sorted into files, so that a failure stops the script.
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+members() { awk '/\{$/ { cls = $0 } { print cls "\t" $0 } /^}$/ { cls = "" }'; }
+members <<<"$old" | sort > "$tmp/old"
+members <<<"$new" | sort > "$tmp/new"
+# Lines of the release's record that the current record lacks, duplicates counted.
+removed=$(comm -23 "$tmp/old" "$tmp/new")
 if [ -n "$removed" ]; then
   if [ "$major" -eq 0 ]; then echo minor; else echo major; fi
 else
