@@ -13,9 +13,12 @@ tag=${1:?usage: scripts/api_bump.sh <tag>}
 file=obvid/api/obvid.api
 
 cd "$(git rev-parse --show-toplevel)"
-# Always the tag on GitHub, never a local tag of the same name.
+# Always the tag on GitHub, never a local tag of the same name, read by its object ID (FETCH_HEAD can change under a
+# concurrent fetch).
+id=$(git ls-remote --refs origin "refs/tags/$tag" | cut -f1)
+[ -n "$id" ] || { echo "api_bump: origin has no tag $tag" >&2; exit 1; }
 git fetch --quiet --no-tags origin "refs/tags/$tag" || { echo "api_bump: cannot fetch the tag $tag" >&2; exit 1; }
-old=$(git show "FETCH_HEAD:$file") || { echo "api_bump: $tag has no $file" >&2; exit 1; }
+old=$(git show "$id:$file") || { echo "api_bump: $tag has no $file" >&2; exit 1; }
 new=$(cat "$file")
 major=${tag#v}
 major=${major%%.*}
