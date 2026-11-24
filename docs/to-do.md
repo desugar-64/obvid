@@ -2,13 +2,21 @@
 
 Ideas that were measured or scoped, but are not in Obvid yet.
 
-## Parallel builds when a screen opens
+## Parallel rebuilds
 
-When a screen with many shadows appears, the main thread builds all the shadows in that one frame, one after the other.
-On a Xiaomi Pad 5, the first frame of the Discover feed builds 36 shadows in 21 ms (Compose: 89 ms; medians of 5). These
-builds are independent. If the big cores share them, this part of the frame can become several times faster. To divide
-one blur between cores is not worth it: approximately 1.25 times faster in an earlier experiment, before the cost to
-wake the cores. Obvid will keep this change only if the first-frame time, janky frames, and power all improve.
+[Parallel builds](how-it-works.md#parallel-builds) send only the first build of a shadow to a worker. A shadow that
+changes size still rebuilds in the draw. On a Xiaomi Pad 5, the demo's field of changing shapes rebuilds approximately
+20 shadows in each frame: 15.5–16.2 ms of frames of approximately 27 ms. If a node also queues a rebuild when the layout
+measures a new size, workers can do this part too.
+
+Two more ideas to measure with it:
+
+- **Newest job first:** the draw goes in the order of the layout and builds a job itself when no worker took it. If
+  the workers take the newest job first, the draw and the workers start at the two ends of the queue. Then the draw
+  waits for a worker less often.
+- **Queue at placement, not at measurement:** a lazy list can measure items for look-ahead and not place them. Each
+  such item starts a build that no draw uses. Placement comes later than measurement, so the workers get less time
+  before the draw.
 
 ## Faster first builds
 

@@ -95,6 +95,9 @@ clock from each run's trace; standard tools only. Sampling: one run for effects 
 ## Traces
 - Library sections (only when a shadow is built, never for a cached draw): `Obvid dropShadow build`,
   `Obvid innerShadow build`, and inside them `Obvid outline`, `Obvid blur`, `Obvid nine-patch`, `Obvid Skia route`.
+  With `ShadowBuilds.Parallel`: `Obvid prefetch build` (a first build on a worker thread; `Obvid outline`,
+  `Obvid blur`, `Obvid nine-patch` or `Obvid Skia route` directly inside, no `... build` wrapper) and
+  `Obvid prefetch wait` (a UI-thread draw that waits for that build).
 - Demo sections, the same for both libraries: `demo:dropShadow` / `demo:innerShadow` around each shadow draw,
   `demo:measure` (the measured window), `demo:reveal`, `demo:chip`, `demo:nav ...`.
 - Compose's verbose sections, for diagnostic captures only (never a timing run):

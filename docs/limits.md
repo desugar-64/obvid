@@ -31,7 +31,12 @@ Obvid is built and tested with Compose UI 1.13.0 (BOM 2026.11.01). This version 
 
 ## Threads
 
-As in Compose, the thread that draws a shadow also builds it during the draw pass. Each UI thread has its own cache.
+By default, as in Compose, the thread that draws a shadow also builds it during the draw pass. Each UI thread has its
+own cache.
+
+With `ShadowBuilds.Parallel`, up to 3 worker threads build the first bitmap of each shadow
+([how](how-it-works.md#parallel-builds)). There is one worker for each big core, minus one core for the main thread.
+A worker stops after 3 s without work. A rebuild stays on the thread that draws the shadow.
 
 ## Memory
 
