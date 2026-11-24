@@ -10,13 +10,15 @@ builds are independent. If the big cores share them, this part of the frame can 
 one blur between cores is not worth it: approximately 1.25 times faster in an earlier experiment, before the cost to
 wake the cores. Obvid will keep this change only if the first-frame time, janky frames, and power all improve.
 
-## Faster first builds on little cores
+## Faster first builds
 
 After an idle screen, the main thread often runs the first frame on a little core. On a Xiaomi Pad 5 (Cortex-A55,
-1.8 GHz), the first build of one 200 dp card takes 3.5 ms there. A warm rebuild on a big core takes 0.24 ms, and Compose
-takes 14.3 ms in the same frame. Most of this time is the nine-patch stretch into a new bitmap. The next steps: profile
-it (arithmetic or first-touch memory), use warm bitmaps again from a small pool, and write less of the flat interior
-that the card covers.
+1.8 GHz), the first build of one 200 dp card takes 3.5 ms there. A warm rebuild takes 0.24 ms, and Compose takes
+14.3 ms in the same frame. The largest parts are the blur of the nine-patch's small round rect (1.55 ms) and the first
+writes into new memory (approximately 200 page faults). The nine-patch write is only 0.33 ms
+([parts](how-it-works.md#frame-timing)). To fill new buffers without zeros first gave no gain
+([#12](https://github.com/desugar-64/obvid/issues/12)). The next step is to keep the blur's buffers after the builder
+closes. This prevents the page faults, but keeps approximately 0.5 to 1 MB while the app is idle.
 
 ## Fewer draw commands for shadows that scroll
 

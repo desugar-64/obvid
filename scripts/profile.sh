@@ -29,7 +29,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 PACKAGE=dev.serhiiyaremych.obvid.benchmark.test
-RUNNER=$PACKAGE/androidx.benchmark.junit4.AndroidBenchmarkRunner
+INSTRUMENTATION_RUNNER=$PACKAGE/androidx.benchmark.junit4.AndroidBenchmarkRunner
 TESTS=dev.serhiiyaremych.obvid.benchmark
 
 mode=$1 out=$2
@@ -92,7 +92,7 @@ for test in "$@"; do
     adb shell "rm -f /data/local/tmp/profile.data; simpleperf record --app $PACKAGE -e cpu-cycles -f 4000 --duration 120 -o /data/local/tmp/profile.data" > /dev/null 2>&1 &
   fi
   sleep 2
-  adb shell am instrument -w -e class "$TESTS.$test" "$RUNNER" | grep -E "^OK|FAIL" | head -1 || echo "  no test result"
+  adb shell am instrument -w -e class "$TESTS.$test" "$INSTRUMENTATION_RUNNER" | grep -E "^OK|FAIL" | head -1 || echo "  no test result"
   wait
   if [[ $mode == counters ]]; then
     { echo "== $test"; adb shell cat /data/local/tmp/profile.txt | grep -E "^\s+[0-9,]+ " || echo "  no counters"; } >> "$out"

@@ -156,8 +156,8 @@ Obvid keeps one bitmap for each shadow.
 The app is idle for one second, then a tap shows a 200 dp card; the frame that draws it is measured. **On the Pad 5,
 Obvid draws this frame twice as fast: 11.0 ms compared to 22.2 ms (Pixel 6: 7.0 ms compared to 10.0 ms).**
 
-A first build is slower than a rebuild: after idle, the main thread often runs on a little core, and the memory is new
-(refer to [To do](docs/to-do.md#faster-first-builds-on-little-cores)).
+A first build is slower than a rebuild: it blurs the shape into new memory, and after idle the main thread often runs
+on a little core (refer to [the parts of a first build](docs/how-it-works.md#frame-timing)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/media/first-frame-dark.png">
@@ -330,7 +330,7 @@ benchmarks, profiling, and tracing; it is written for coding agents, but also wo
 Ideas that were measured or scoped, but are not in Obvid yet:
 
 - [ ] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds.
-- [ ] [Faster first builds on little cores](docs/to-do.md#faster-first-builds-on-little-cores): 3.5 ms on a Pad 5 little core after idle.
+- [ ] [Faster first builds](docs/to-do.md#faster-first-builds): 3.5 ms on a Pad 5 little core after idle.
 - [ ] [Fewer draw commands for shadows that scroll](docs/to-do.md#fewer-draw-commands-for-shadows-that-scroll): for tablets with a weak GPU.
 - [ ] [Drop shadows under opaque content](docs/to-do.md#drop-shadows-under-opaque-content): opt-in, skip the hidden middle.
 - [ ] [More shapes on the fast path](docs/to-do.md#more-shapes-on-the-fast-path): rects, blur radius 0, paths with spread.
