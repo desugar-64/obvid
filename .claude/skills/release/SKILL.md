@@ -26,7 +26,8 @@ release cannot be taken back: only start one when the user asks for it in their 
   non-empty `CHANGELOG.md` section, the README's install line names it, and it is not older than the newest `v*` tag.
   Before the tag and in the release workflow it must also be newer than every earlier tag (the workflow: equal to its
   own), and the one `## Unreleased` section must be empty: a change merged after the bump moves its line into the
-  pending version's section, in a pull request. The workflow also checks that the tagged commit is on `main` with green
+  pending version's section, in a pull request, if that version still fits the change. If it does not (an API break
+  in a pending patch), ask the user. The workflow also checks that the tagged commit is on `main` with green
   CI from a push to `main`, and that the build produced this version.
 
 ## Steps

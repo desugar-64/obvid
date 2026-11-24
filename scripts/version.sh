@@ -35,7 +35,8 @@ version=$(sed -n 's/^obvid\.version=\(.*\)$/\1/p' gradle.properties)
 
 scripts/changelog.sh "$version" > /dev/null || exit 1
 # One exact `## Unreleased` heading, so that the check of its contents below sees all of them.
-count=$(grep -ciE '^##[[:space:]]*unreleased' CHANGELOG.md || true)
+# Markdown also takes a heading indented by up to three spaces.
+count=$(grep -ciE '^ {0,3}##[[:space:]]*unreleased[[:space:]]*$' CHANGELOG.md || true)
 [ "$count" = 1 ] && grep -qx '## Unreleased' CHANGELOG.md ||
   fail "CHANGELOG.md must have exactly one '## Unreleased' heading (exactly that line)"
 
