@@ -4,7 +4,7 @@ Ideas that were measured or scoped, but are not in Obvid yet.
 
 ## Parallel rebuilds
 
-[Parallel builds](how-it-works.md#parallel-builds) send only the first build of a shadow to a worker. A shadow that
+[Parallel builds](how-it-works.md#parallel-builds) send only the bitmap of each new shadow to a worker. A shadow that
 changes size still rebuilds in the draw. On a Xiaomi Pad 5, the demo's field of changing shapes rebuilds approximately
 20 shadows in each frame: 15.5–16.2 ms of frames of approximately 27 ms. If a node also queues a rebuild when the layout
 measures a new size, workers can do this part too.

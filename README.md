@@ -12,7 +12,8 @@
 modifiers of Jetpack Compose. Android's own `Canvas` draws the outline of each shape, and Obvid blurs it in NEON (Arm
 SIMD) code. On Android 16–17, the pixels are identical to Compose's. On older versions, Obvid gives the same output as
 on Android 16–17, which can differ a little from the Compose of that device. For most shapes, Obvid builds a shadow
-7–13 times faster than Compose.
+7–13 times faster than Compose. For screens that open with many shadows, an opt-in builds them on worker threads, so
+the main thread can go on with its frame.
 
 ## Contents
 
@@ -22,7 +23,7 @@ on Android 16–17, which can differ a little from the Compose of that device. F
   - [One rebuild](#one-rebuild)
   - [An animated glow](#an-animated-glow)
   - [The first frame of a new screen](#the-first-frame-of-a-new-screen)
-  - [A screen that opens with many shadows](#a-screen-that-opens-with-many-shadows)
+  - [Parallel builds: a screen with many new shadows](#parallel-builds-a-screen-with-many-new-shadows)
   - [A stress test](#a-stress-test)
   - [Scrolling on a weak GPU](#scrolling-on-a-weak-gpu)
 - [How it works](#how-it-works)
@@ -40,7 +41,8 @@ it; Obvid builds the same bitmap 7–13 times faster. It shows in:
 - **Animated shadows:** a glow, a pulse, a loader, a morphing shape. Compose rebuilds the bitmap in each frame; Obvid
   rebuilds faster, and not at all when only the color, brush, or alpha changes.
 - **New screens with many shadows:** the first frame, navigation, new list items. All their shadows are built in one
-  frame. With the opt-in [parallel builds](#parallel-builds), worker threads build them.
+  frame. An opt-in moves these builds to worker threads
+  ([parallel builds](#parallel-builds-a-screen-with-many-new-shadows)).
 - **Inner shadows on a weak GPU:** Obvid draws only the bands along the edges, not the empty middle
   ([numbers](#scrolling-on-a-weak-gpu)).
 
@@ -69,21 +71,6 @@ shadows.
 +import dev.serhiiyaremych.obvid.dropShadow
 +import dev.serhiiyaremych.obvid.innerShadow
 ```
-
-### Parallel builds
-
-By default (`ShadowBuilds.Inline`), the main thread builds each shadow in the draw, one after the other, as in Compose.
-With `ShadowBuilds.Parallel`, up to 3 worker threads build the first bitmap of each shadow at the same time: one worker
-for each big core, minus one core for the main thread. For a screen that opens with many shadows:
-
-```kotlin
-CompositionLocalProvider(LocalShadowBuilds provides ShadowBuilds.Parallel) { FeedScreen() }
-```
-
-- **Use it for:** screens, lists and dialogs that show many new shadows in one frame
-  ([numbers](#a-screen-that-opens-with-many-shadows)).
-- **Do not use it for:** a screen with one or a few shadows. The handoff to a worker costs up to 1.3 ms there.
-- **No change for:** animated shadows. Only the first build goes to a worker; a rebuild stays in the draw.
 
 ## Numbers
 
@@ -207,27 +194,28 @@ frame of the main thread (`Choreographer#doFrame`): 22.1 ms with Compose and 11.
 
 </details>
 
-### A screen that opens with many shadows
+### Parallel builds: a screen with many new shadows
 
-A tap opens the demo's feed. In that one frame, the demo creates its whole UI (composition), lays it out and draws it.
-On the Pad 5, that is 74 shadow draws and 36 shadows to build. No data or images load in this frame.
+By default, the main thread builds the bitmap of each new shadow in the draw, one after the other, as in Compose. With
+the opt-in parallel builds, up to 3 worker threads on the big cores build them during the layout. The draw then only
+uses the finished bitmaps.
 
-With [parallel builds](#parallel-builds), 3 worker threads build the shadows during the layout, and the draw uses the
-finished bitmaps. **Obvid's time on the main thread goes from 16.5 to 2.4 ms on the Pad 5, and from 13.2 to 1.1 ms on
-the Pixel 6.** The frame is 10.3 ms shorter on the Pad 5 (95.7 → 85.4 ms) and 14.0 ms shorter on the Pixel 6
-(63.8 → 49.8 ms).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/parallel-timeline-dark.png">
+  <img src="docs/media/parallel-timeline.png" alt="One frame, not to scale. Inline: the main thread runs composition, layout, then a draw that builds every new shadow one after the other. Parallel: the layout queues the builds, three workers on big cores build them during the layout, and the short draw only uses the finished bitmaps, so the frame ends earlier" width="100%">
+</picture>
+
+A tap opens the demo's feed. In that one frame, the demo creates its whole UI, lays it out and draws it. On the Pad 5,
+that is 36 new shadows. **Obvid's time on the main thread goes from 16.5 to 2.4 ms on the Pad 5, and from 13.2 to
+1.1 ms on the Pixel 6.** The frame is 10.3 and 14.0 ms shorter.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/media/parallel-builds-dark.png">
   <img src="docs/media/parallel-builds.png" alt="Stacked bars of the main thread's frame that opens the feed, main thread only against main thread plus 3 workers. Obvid's part: 16.5 against 2.4 ms on the Pad 5, 13.2 against 1.1 ms on the Pixel 6. Frames: 95.7 against 85.4 ms, and 63.8 against 49.8 ms" width="100%">
 </picture>
 
-Composition is the same work in both modes, but it is noisy: on the Pixel 6, it takes 14–45 ms from run to run, with
-the core and the clock that the main thread gets. Its 4 ms difference in the chart is this noise. On the Pad 5, the
-layout of the other elements is also noisy (+3 and +11 ms in the two orders).
-
 <details>
-<summary>The numbers as a table, and the other screens</summary>
+<summary>The numbers as a table</summary>
 
 Medians of 5 runs, in both orders (main thread only, + 3 workers, + 3 workers, main thread only). The chart shows the
 mean of the two orders. "Obvid" is the builds on the main thread; with workers, it is the queueing in the layout and
@@ -240,11 +228,22 @@ the waits in the draw.
 | Layout and draw, with Obvid | 55.8 / 45.5 ms | 40.4 / 41.9 ms | 31.0 / 30.6 ms | 19.5 / 19.4 ms |
 | Composition | 36.5 / 36.6 ms | 35.0 / 37.8 ms | 29.0 / 30.0 ms | 25.1 / 25.9 ms |
 
-- **One card** ([first frame](#the-first-frame-of-a-new-screen)): 1.3 ms slower on the Pixel 6 (+17–19%), a tie on
-  the Pad 5. There is nothing to do in parallel, but the handoff still costs time.
+Composition is the same work in both modes, but it is noisy: on the Pixel 6, it takes 14–45 ms from run to run, with
+the core and the clock that the main thread gets. Its 4 ms difference in the chart is this noise. On the Pad 5, the
+layout of the other elements is also noisy (+3 and +11 ms in the two orders).
+
+</details>
+
+<details>
+<summary>Other screens</summary>
+
+- **One card** ([first frame](#the-first-frame-of-a-new-screen)): 1.3 ms slower on the Pixel 6, a tie on the Pad 5.
+  There is nothing to do in parallel, but the handoff to a worker costs time.
 - **Navigation after 4 s of idle:** the first frame is 7–14% shorter on the Pixel 6, a tie on the Pad 5. After idle,
   the Pad 5 runs the layout on a little core.
-- **Animated glow and scrolling:** a tie on both devices.
+- **Shadows that change:** they rebuild on the main thread, as before. The animated glow and scrolling are a tie on
+  both devices.
+- **One rebuild,** the default against the previous version: a tie on all routes (Pixel 6, Microbenchmark).
 - **CPU and power** (Pixel 6): the app's total CPU time and the energy of the CPU power rails stay the same, within
   the noise.
 
@@ -363,7 +362,7 @@ of Android 8 and 9, the measured difference is PSNR 42–67 dB; round rects diff
 - [**Some shadows are not faster:**](docs/limits.md#some-cases-use-the-skia-of-the-device) rects, blur radius 0 and a few rare paths use the blur of the device's Skia, as in Compose.
 - [**Compose's hard edge stays by default.**](docs/limits.md#composes-hard-edge-stays-by-default) A Compose shadow stops at a fixed distance from the shape, so a strong glow can end at a visible line. `ShadowExtent.Full` removes it for drop shadows.
 - [**Compose 1.13 or newer, minSdk 24.**](docs/limits.md#compose-113-or-newer-minsdk-24)
-- [**Threads:**](docs/limits.md#threads) by default, no background threads: the thread that draws a shadow builds it, as in Compose. [Parallel builds](#parallel-builds) use up to 3 worker threads.
+- [**Threads:**](docs/limits.md#threads) by default, no background threads: the thread that draws a shadow builds it, as in Compose. [Parallel builds](#parallel-builds-a-screen-with-many-new-shadows) use up to 3 worker threads.
 - [**Memory:**](docs/limits.md#memory) off-screen shadows stay cached for 3 s, up to 10 MiB.
 - [**Size:**](docs/limits.md#size) Obvid adds approximately 68 KB to the download and 131 KB to the arm64 APK.
 
