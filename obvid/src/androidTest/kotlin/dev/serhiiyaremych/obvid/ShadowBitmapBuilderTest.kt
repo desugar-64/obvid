@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -22,6 +23,7 @@ import dev.serhiiyaremych.obvid.fixtures.FrameShape
 import dev.serhiiyaremych.obvid.fixtures.ShapeCase
 import dev.serhiiyaremych.obvid.fixtures.alphaOf
 import dev.serhiiyaremych.obvid.fixtures.catalogShape
+import dev.serhiiyaremych.obvid.fixtures.outlineParams
 import dev.serhiiyaremych.obvid.fixtures.roundRectShapes
 import dev.serhiiyaremych.obvid.fixtures.shapeCatalog
 import kotlin.math.floor
@@ -65,6 +67,12 @@ import org.junit.runner.RunWith
  *
  * [smallBlurMatchesCompose]: blur radii under 2.6 px (σ < 2, Skia's small blur) on paths, round rects and frames
  * (holes around Skia's frame nine-patch threshold included), with the same checks and the route asserted. Output: `smallblur-drop-builder.csv` and `smallblur-drop-builder-summary.txt`.
+ *
+ * [maskRouteGapsMatchCompose]: paths whose mask Skia forms differently from a fill inside the path's bounds (inverse
+ * fills, spread strokes up to 1 px wide, spread strokes that are rects; [MaskRouteGapCases]), which take the Skia
+ * route, with Skia's decision per case and the counts per group; the inverse fills also with the full extent, which
+ * keeps Compose's window for them. Output: `maskgaps-drop-builder.csv` and
+ * `maskgaps-drop-builder-summary.txt`.
  */
 @RunWith(AndroidJUnit4::class)
 class ShadowBitmapBuilderTest {
@@ -524,6 +532,111 @@ class ShadowBitmapBuilderTest {
     }
   }
 
+  /**
+   * Paths whose mask Skia forms differently from a fill inside the path's bounds ([MaskRouteGapCases]): inverse fills,
+   * spread strokes up to 1 px wide (Skia's hairline) and spread strokes that are rects (Skia's `BlurRect`), at radius 1
+   * px, 4 dp and 24 dp, fresh builders (`fresh`); and the inverse fills again with the full extent (`full`), which keeps
+   * Compose's window for them: Compose's bitmap, at origin (0, 0); and [MaskRouteGapCases.spreadChangeCases] through one
+   * builder, bitmap pair and kept outline per shape (`spreadChange`: the stroke test is kept per outline and spread).
+   * Per case the route, the difference from Compose and
+   * Skia's decision by those rules. Every case is asserted identical on the target Skia and on its route
+   * ([MaskRouteGapCases.expectedDropRoute]: the Skia route for those paths, the mask route for the rest), with one
+   * failure listing the counts per group; stale pixels and the generation id as in [builderMatchesCompose], and the
+   * `full` builds' origin. Output: `maskgaps-drop-builder.csv` and `maskgaps-drop-builder-summary.txt`.
+   */
+  @Test
+  fun maskRouteGapsMatchCompose() {
+    val start = android.os.SystemClock.elapsedRealtime()
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val density = Density(context)
+    val cases = MaskRouteGapCases.dropCases(density)
+    class GapRow(val csv: String, val o: Outcome, val result: MaskRouteGapCases.Result, val originX: Int, val originY: Int)
+    fun run(
+      c: MaskRouteGapCases.DropCase,
+      phase: String,
+      builder: ShadowBitmapBuilder? = null,
+      target: ShadowBitmaps = ShadowBitmaps(),
+      kept: Outline? = null,
+    ): GapRow {
+      val outline = kept ?: c.outline(density)
+      val radius = c.radius(density)
+      val spread = c.spread(density)
+      val local = checkNotNull(outlineParams(outline).path).asAndroidPath()
+      val prediction = MaskRouteGapCases.predictDrop(local, radius, spread)
+      val expectedRoute = MaskRouteGapCases.expectedDropRoute(local, radius, spread)
+      val full = phase == "full"
+      val o =
+        if (builder != null) measure(builder, target, outline, c.size, radius, spread, full)
+        else ShadowBitmapBuilder().use { b -> measure(b, target, outline, c.size, radius, spread, full) }
+      val csv =
+        (listOf<Any>(
+            Build.MODEL.replace(',', ' '),
+            Build.VERSION.SDK_INT,
+            phase,
+            c.gap,
+              c.shape.name,
+              c.sizePx,
+              c.radiusLabel,
+              c.radiusDp,
+              radius,
+              c.spreadLabel,
+              c.spreadDp,
+              spread,
+              prediction.gap ?: "",
+              prediction.rule,
+              expectedRoute,
+            ) + o.columns() + listOf(target.originX, target.originY))
+            .joinToString(",")
+      val result =
+        MaskRouteGapCases.Result(
+          c.gap,
+          c.radiusLabel,
+          c.spreadLabel,
+          prediction.gap != null,
+          o.route,
+          o.identical,
+          o.diff.max,
+          o.diff.pixels,
+          expectedRoute,
+        )
+      return GapRow(csv, o, result, target.originX, target.originY)
+    }
+    val fresh = cases.map { run(it, "fresh") }
+    val full = cases.filter { it.gap == MaskRouteGapCases.INVERSE }.map { run(it, "full") }
+    val spreadChange = ShadowBitmapBuilder().use { b ->
+      val target = ShadowBitmaps()
+      MaskRouteGapCases.spreadChangeCases(density).groupBy { it.shape.name }.values.flatMap { group ->
+        val outline = group.first().outline(density)
+        group.map { run(it, "spreadChange", b, target, outline) }
+      }
+    }
+    val rows = fresh + full + spreadChange
+    val seconds = (android.os.SystemClock.elapsedRealtime() - start) / 1000.0
+    val results = rows.map { it.result }
+    val summary = ArrayList<String>()
+    summary += MaskRouteGapCases.summary(fresh.map { it.result })
+    summary += "full extent, inverse fills: identical to Compose's bitmap ${full.count { it.o.identical }} / ${full.size}, " +
+      "routes as expected ${full.count { it.result.routeOk }} / ${full.size}, origin not (0, 0) " +
+      "${full.count { it.originX != 0 || it.originY != 0 }}"
+    summary += "spread changes on a kept outline: identical ${spreadChange.count { it.o.identical }} / ${spreadChange.size}, " +
+      "routes as expected ${spreadChange.count { it.result.routeOk }} / ${spreadChange.size}"
+    summary += "outside used non-zero ${rows.count { it.o.outsideNonZero > 0 }}, generation id unchanged ${rows.count { !it.o.genChanged }}"
+    summary += "API ${Build.VERSION.SDK_INT}, ${Build.MODEL}, density ${density.density}, " +
+      String.format(java.util.Locale.US, "%.1f s", seconds)
+    summary += offTargetLines(MaskRouteGapCases.GAPS.map { g -> g to rows.filter { it.result.gap == g }.map { it.o } })
+    summary.forEach { Log.i(TAG, it) }
+    rows.filter { !it.o.identical }.take(MAX_LOGGED_ROWS).forEach { Log.i(TAG, it.csv) }
+    writeResults(context, GAPS_CSV_NAME, listOf(GAPS_HEADER) + rows.map { it.csv })
+    writeResults(context, GAPS_SUMMARY_NAME, summary)
+
+    for (r in rows) {
+      assertEquals("stale pixels outside used: ${r.csv}", 0, r.o.outsideNonZero)
+      assertTrue("generation id unchanged: ${r.csv}", r.o.genChanged)
+    }
+    for (r in full) assertTrue("full extent of an inverse fill not at Compose's origin: ${r.csv}", r.originX == 0 && r.originY == 0)
+    MaskRouteGapCases.failure(results, GAPS_CSV_NAME, TargetSkia.isDevice)?.let { throw AssertionError(it) }
+  }
+
   /** `radius 0`, or the spread's sign with radius > 0. */
   private fun spreadLabel(c: PathCase): String =
     when {
@@ -725,7 +838,7 @@ class ShadowBitmapBuilderTest {
     return Row(phase, index, c, g, measure(builder, target, outline, g.size, g.radius, g.spread))
   }
 
-  /** One build of [outline] by [builder] into [target], against reference A. */
+  /** One build of [outline] by [builder] into [target] ([full]: the full extent), against reference A. */
   private fun measure(
     builder: ShadowBitmapBuilder,
     target: ShadowBitmaps,
@@ -733,11 +846,12 @@ class ShadowBitmapBuilderTest {
     size: Size,
     radius: Float,
     spread: Float,
+    full: Boolean = false,
   ): Outcome {
     val ref = ComposeShadowReference.referenceA(outline, size, radius, spread).asAndroidBitmap()
     val before = target.bitmap
     val genBefore = before?.generationId
-    builder.build(target, outline, size, radius, spread)
+    builder.build(target, outline, size, radius, spread, full = full)
     val bmp = target.bitmap!!
     val grew = before !== bmp
     val genChanged = grew || bmp.generationId != genBefore
@@ -900,6 +1014,11 @@ class ShadowBitmapBuilderTest {
     const val SMALL_CSV_NAME = "smallblur-drop-builder.csv"
     const val SMALL_SUMMARY_NAME = "smallblur-drop-builder-summary.txt"
     const val SMALL_HEADER = "$HEADER,sigma,border"
+    const val GAPS_CSV_NAME = "maskgaps-drop-builder.csv"
+    const val GAPS_SUMMARY_NAME = "maskgaps-drop-builder-summary.txt"
+    const val GAPS_HEADER =
+      "model,api,phase,gap,shape,sizePx,radiusLabel,radiusDp,radiusPx,spreadLabel,spreadDp,spreadPx,predictedGap,skiaRule," +
+        "expectedRoute,route,usedW,usedH,capW,capH,identical,maxDiff,diffPixels,outsideNonZero,genChanged,grew,originX,originY"
     const val ROUND_CSV_NAME = "roundrect-builder.csv"
     const val ROUND_SUMMARY_NAME = "roundrect-builder-summary.txt"
     const val ROUND_HEADER =

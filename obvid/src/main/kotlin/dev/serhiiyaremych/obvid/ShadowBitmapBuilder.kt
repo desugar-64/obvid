@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathIterator
 import androidx.compose.ui.graphics.PathSegment
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativePaint
 import kotlin.math.abs
@@ -33,8 +34,8 @@ import kotlin.math.min
  * One shadow's output, written by [ShadowBitmapBuilder]: up to two A8 bitmaps, each kept at exactly the used size
  * with `Bitmap.reconfigure` inside its grow-only allocation (so Compose's own `drawImage(image, topLeft)` /
  * `ImageShader` calls see Compose's exact-size bitmap: same edge clamping and filtering), the outline's mask path,
- * whether it may be nested rects ([nestedRects]) and whether it is a canonical frame ([isFrame], [framePoints]), kept
- * while the outline is, and the nine-patch route's private blurred small round rect with its key ([keptNineMask]).
+ * whether it may be nested rects ([nestedRects]), whether it is a canonical frame ([isFrame], [framePoints]) and
+ * whether its stroke may be rects ([strokeMayBeRects]), kept while the outline is, and the nine-patch route's private blurred small round rect with its key ([keptNineMask]).
  *
  * Two buffers: `build(…, preserveCurrent = true)` writes into the second bitmap and leaves the current one untouched,
  * for a bitmap a recorded frame may still read on the RenderThread: HWUI pins (uploads) the images of `drawBitmap`
@@ -98,8 +99,27 @@ internal class ShadowBitmaps {
    */
   val framePoints = FloatArray(16)
 
-  /** [mayBeNestedRects]' and [readFrame]'s scratch for one segment's points. */
+  /** [mayBeNestedRects]', [readFrame]'s and [mayBeStrokeRects]' scratch for one segment's points. */
   private val segmentPoints = FloatArray(8)
+
+  /** The spread [strokeRects] was taken for under the current outline; NaN: none yet. */
+  private var strokeRectsSpread = Float.NaN
+  private var strokeRects = false
+
+  /**
+   * Whether [stroke], Compose's `2·spread` stroke of [path] for this [spread], may be one rect or two nested rects for
+   * Skia's `countNestedRects` ([mayBeStrokeRects]). Taken when the spread differs from the last one asked under the
+   * current outline (it allocates an iterator), then kept: a kept outline at a kept spread costs a float compare. As
+   * for [isFrame], a path changed in place under the same outline (and spread) is not read again; Compose's own cache
+   * of an outline's path assumes the same.
+   */
+  fun strokeMayBeRects(spread: Float, stroke: Path): Boolean {
+    if (spread != strokeRectsSpread) {
+      strokeRects = mayBeStrokeRects(stroke, segmentPoints)
+      strokeRectsSpread = spread
+    }
+    return strokeRects
+  }
 
   /** A copy of Compose's internal `Outline.Rounded.roundRectPath` (the same path), reused across outlines. */
   private var roundRectPath: Path? = null
@@ -225,6 +245,7 @@ internal class ShadowBitmaps {
     cornerRadius = CornerRadius.Zero
     nestedRects = false
     isFrame = false
+    strokeRectsSpread = Float.NaN
     when (outline) {
       is Outline.Generic -> {
         path = outline.path
@@ -384,13 +405,14 @@ internal class ShadowBitmaps {
  * - [Route.Mask]: `Outline.Generic` and non-simple `Outline.Rounded` with radius > 0, unless the path moved by
  *   Compose's translate is a rect (`Path.isRect`; Skia blurs a rect path with its analytic `BlurRect`) or may be
  *   nested rects ([ShadowBitmaps.nestedRects]; Skia's rect nine-patch, also with spread: the fill draw; canonical
- *   frames are decided exactly, below). The outline is
+ *   frames are decided exactly, below), or is a path whose mask Skia forms otherwise ([buildMask]: an inverse fill, a
+ *   spread stroke Skia draws as a hairline, a spread stroke that may be rects). The outline is
  *   drawn without a mask filter into a reused A8 mask bitmap at Skia's mask bounds (`compute_mask_bounds`), blurred by
  *   the NEON kernel and written into the bitmap at (mask origin − border) (`ObvidNative.builderBlur`). Path +
  *   spread: the fill and the `2·spread` stroke are separate masks, the stroke composited source-over.
- * - [Route.Skia]: `Outline.Rectangle`, a rect path, nested rects (except the frames below), simple `Outline.Rounded`
- *   where Skia's decision is not Obvid's, and any outline at radius ≤ 0 (Compose then sets no mask filter): Compose's
- *   own draw calls with its `Paint` configuration.
+ * - [Route.Skia]: `Outline.Rectangle`, a rect path, nested rects (except the frames below), the paths [buildMask]
+ *   leaves to Skia, simple `Outline.Rounded` where Skia's decision is not Obvid's, and any outline at radius ≤ 0
+ *   (Compose then sets no mask filter): Compose's own draw calls with its `Paint` configuration.
  * - A canonical frame ([ShadowBitmaps.isFrame]: two `addRect`-shaped contours) with radius > 0 and spread ≤ 0, by
  *   Skia's nested-rects test on its points moved by the translate ([nestedFrame]) and then Android 17's
  *   `filterRectsToNine` (`ObvidNative.builderPlanRects`):
@@ -434,10 +456,11 @@ internal class ShadowBitmaps {
  * (`ObvidNative.builderInvertHole`); the nine-patch routes write `255 − B` in the same pass instead
  * (`builderNineInvertedHole`, `builderNineKeepInvertedHole`, `builderNinePlaceInvertedHole`, `builderNineRects`).
  * Except the frame's nine-patch, each also returns the bitmap's hole (a rect of 0s), from which the build sets the
- * bands of the final draw ([ShadowBitmaps.setBands]) unless the outline is a concave path:
+ * bands of the final draw ([ShadowBitmaps.setBands]) unless the outline is a concave path or an inverse fill:
  * - [Route.Mask]: a path (`Outline.Generic`, non-simple `Outline.Rounded`) with radius > 0 and spread ≤ 0 (Compose
  *   ignores a negative spread there), moved by the offset, unless it is a rect (`Path.isRect`; Skia blurs a rect path
- *   with its analytic `BlurRect`) or may be nested rects ([ShadowBitmaps.nestedRects]; Skia's rect nine-patch). Also a
+ *   with its analytic `BlurRect`), may be nested rects ([ShadowBitmaps.nestedRects]; Skia's rect nine-patch) or is an
+ *   inverse fill (Skia's mask is the whole clip, [buildInnerPath]). Also a
  *   path, nested rects included, with spread > 0 and radius > 0: Compose's intermediate (the path eroded
  *   by a `Clear` stroke) is rasterized by Compose's own calls, and the mask Skia blurs for `drawImage` of it is formed
  *   by the newest Skia's placement rule ([buildInnerPathSpread]), unless Skia's rect-to-rect matrix for that
@@ -526,6 +549,8 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
   private val frameRects = FloatArray(8)
   private val framePath = android.graphics.Path()
   private val strokeFill = android.graphics.Path()
+  // [strokeFill] as a Compose path, for [ShadowBitmaps.strokeMayBeRects]' iterator.
+  private val strokeFillCompose = strokeFill.asComposePath()
   private val bounds = RectF()
   private var border = 0
   private var borderRadius = Float.NaN
@@ -570,7 +595,8 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
    * grown by the margin past which the blur is 0: [ObvidNative.builderFullMargin] on Obvid's routes, the device Skia's
    * reach ([ObvidNative.builderSkiaReachMargin]) on [Route.Skia]. Every route decides and draws on that canvas's device
    * coordinates, as Skia would. A shape reaching past its layout bounds is kept up to that margin past Compose's window
-   * (the bitmap is at most Compose's grown by the margin on each side).
+   * (the bitmap is at most Compose's grown by the margin on each side). An inverse fill keeps Compose's window: it
+   * covers the whole canvas, so no window holds all of its shadow.
    */
   fun build(
     target: ShadowBitmaps,
@@ -600,9 +626,13 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     radius: Float,
     spread: Float,
     preserveCurrent: Boolean,
-    full: Boolean,
+    fullExtent: Boolean,
   ) {
     target.setOutline(outline)
+    val path = target.path
+    // An inverse fill covers the whole canvas Compose draws on, however large: no window holds all of its shadow, so it
+    // keeps Compose's (the same bitmap as without the full extent).
+    val full = fullExtent && !(path != null && path.asAndroidPath().isInverseFillType)
 
     // DropShadowRenderer.createOuterShadowBitmap: the bitmap size. Compose's ImageBitmap throws
     // IllegalArgumentException for an empty one (a negative spread can make it empty); so does this, also for the full
@@ -622,7 +652,6 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
 
     // createOuterShadowBitmap(path): translated by radius + spread only for a positive spread.
     val t = if (spread > 0f) radius + spread else radius
-    val path = target.path
     // Each sets the route when it takes the build, and prepares the bitmap ([prepareWindow]) once it has. A canonical
     // frame without spread (one fill draw) is decided by Skia's nested-rects test on the moved points; any other path
     // that may be nested rects is left to Skia, which blurs the fill draw with its rect nine-patch.
@@ -720,11 +749,15 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
 
   /**
    * The local bounds of Compose's path draw into [bounds]: the path's, united with its `2·spread` stroke's for a
-   * positive spread (the stroke is kept in [strokeFill] for [buildMask]).
+   * positive spread (the stroke is kept in [strokeFill] for [buildMask]). A stroke Skia draws as a hairline
+   * ([hairlineSpread]) reaches pixels up to 1 px from the path instead (Skia draws it into a mask of the path's bounds
+   * outset by ½, rounded out): the path's bounds outset by 1.
    */
   private fun pathDrawBounds(local: android.graphics.Path, spread: Float) {
     @Suppress("DEPRECATION") local.computeBounds(bounds, true)
-    if (spread > 0f) {
+    if (hairlineSpread(spread)) {
+      bounds.inset(-1f, -1f)
+    } else if (spread > 0f) {
       localStroke(local, spread)
       @Suppress("DEPRECATION") strokeFill.computeBounds(strokeBounds, true)
       bounds.union(strokeBounds)
@@ -852,8 +885,9 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
         // Bands only for an outline whose pixels do not depend on the clip it is drawn under: a rect, a round rect
         // (analytic on the GPU) or a convex path (Ganesh's convex path renderer). A concave path's renderer is chosen
         // by its clipped device bounds (an atlas for a small clipped path, a tessellation for a large one), whose
-        // anti-aliased edges differ by a few levels.
-        if (hole > 0L && (path == null || path.isConvex)) {
+        // anti-aliased edges differ by a few levels. An inverse fill (convex or not) covers the whole clip, past any
+        // band.
+        if (hole > 0L && (path == null || (path.isConvex && !path.asAndroidPath().isInverseFillType))) {
           // A path may reach past the component: the bands must cover all of it.
           @Suppress("DEPRECATION") if (path != null) path.asAndroidPath().computeBounds(bounds, true)
           target.setBands(hole, size.width, size.height, if (path != null) bounds else null)
@@ -897,6 +931,17 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
    * Skia's `BlurRect`, not Obvid's; nested rects reach this only where Skia's `filterRectsToNine` returns
    * unimplemented). Prepares and writes the bitmap and sets the route; false leaves the build to the Skia route.
    *
+   * Also left to the Skia route, decided before anything is written, the paths whose masks Skia forms otherwise:
+   * - an inverse fill: `DrawToMask` bounds it by the clip grown by the blur's margin, not by the path (its stroke is an
+   *   inverse fill too);
+   * - spread > 0 with a stroke Skia draws as a hairline ([hairlineSpread]): an anti-aliased hairline with the paint's
+   *   alpha scaled by the width, not a fill of the stroke's outline;
+   * - spread > 0 with a stroke that may be one rect or two nested rects for `countNestedRects`, which Skia blurs with
+   *   `BlurRect` or its rect nine-patch: decided on the stroke itself ([localStroke]: the platform's stroker is Skia's,
+   *   so the same degenerate curves reduce to lines), by [ShadowBitmaps.strokeMayBeRects], kept per outline and
+   *   spread. A superset of Skia's test, which also takes the rects Skia blurs whole. A build with its outline and
+   *   spread kept costs a fill-type read, a float compare and the stroke it draws anyway.
+   *
    * The moved path is `local` copied and offset; with [fromFrame] (a canonical frame, spread ≤ 0) it is rebuilt from
    * the frame's moved points instead ([setMovedFrame]: the same verbs and points). On API 23–33 `android.graphics.Path`
    * keeps a shortcut for a path made only of same-direction `addRect` calls (`isSimplePath`, which `set` copies and a
@@ -911,6 +956,8 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     ty: Float,
     fromFrame: Boolean = false,
   ): Boolean {
+    if (local.isInverseFillType) return false
+    if (spread > 0f && hairlineSpread(spread)) return false
     if (fromFrame) {
       setMovedFrame(local.fillType)
     } else {
@@ -918,14 +965,17 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
       devPath.offset(tx, ty)
     }
     if (devPath.isRect(null)) return false
+    if (spread > 0f) {
+      // Second Compose draw: the same path stroked 2·spread wide. Skia strokes in local space (resScale 1 for a
+      // translate), then translates by the CTM. Tested in local space: the translate keeps an axis-aligned edge so.
+      localStroke(local, spread)
+      if (checkNotNull(windowTarget).strokeMayBeRects(spread, strokeFillCompose)) return false
+    }
     route = Route.Mask
     updateBorder(radius)
     val target = prepareWindow()
     blurPath(devPath, target, winW, winH, radius, MODE_REPLACE)
     if (spread > 0f) {
-      // Second Compose draw: the same path stroked 2·spread wide. Skia strokes in local space (resScale 1 for a
-      // translate), then translates by the CTM.
-      localStroke(local, spread)
       strokeFill.offset(tx, ty)
       blurPath(strokeFill, target, winW, winH, radius, MODE_SRC_OVER)
     }
@@ -1318,7 +1368,8 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
    * `createInnerPathShadowBrush` without spread: Compose translates by the offset and draws the path blurred; Skia
    * fills the path moved by that translate in device space, through `filterPath` (as the drop shadow's mask route),
    * unless the moved path is a rect (`countNestedRects`: Skia's `BlurRect`, not Obvid's; nested rects reach this only
-   * where Skia's `filterRectsToNine` returns unimplemented).
+   * where Skia's `filterRectsToNine` returns unimplemented), or the path is an inverse fill (`DrawToMask` bounds its mask
+   * by the clip grown by the blur's margin, not by the path).
    * Writes B and sets the route; false leaves the build to the Skia route. With [fromFrame] (a canonical frame) the
    * moved path is rebuilt from the frame's moved points, as in [buildMask] (which explains the platform shortcut this
    * avoids on API 23–33).
@@ -1333,6 +1384,7 @@ internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMa
     offsetY: Float,
     fromFrame: Boolean = false,
   ): Boolean {
+    if (path.asAndroidPath().isInverseFillType) return false
     if (fromFrame) {
       setMovedFrame(path.asAndroidPath().fillType)
     } else {
@@ -1926,6 +1978,66 @@ private fun mayBeNestedRects(path: Path, points: FloatArray): Boolean {
   }
   return contours == 2 && !(hasEdge && !axisAligned(x, y, startX, startY))
 }
+
+/**
+ * Whether [stroke] (Compose's spread stroke in local space, as the platform's stroker, which is Skia's, made it) may be
+ * one rect or two nested rects for Skia's `countNestedRects` on it moved by the draw's translate: `isRect`, or
+ * `IsNestedFillRects` (two rect contours, one containing the other, in any direction). A superset of both: no curve
+ * verb (they reject curves), every line axis-aligned within [AXIS_TOLERANCE], at most two contours with a line
+ * longer than [AXIS_TOLERANCE] (Skia's rect test skips zero-length lines, so a contour whose lines are all within the
+ * tolerance, which the translate may collapse, does not count)
+ * (a translate below Skia's 32767 rect limit rounds a coordinate by at most half an ulp, ≤ 1/512 px, so it can only
+ * make an edge within the tolerance exact), and at most five direction runs per contour over those longer lines (a rect
+ * has four edges, five runs when it starts inside one; skipping the short lines only merges or drops runs). Collinear
+ * points on an edge pass, as Skia's rect test allows them, and the closing segments are not tested (which only widens
+ * the superset). An open polyline's stroke, such as an L's six-sided outline, has more runs. A stroke this lets through
+ * that Skia does not blur as rects only takes the slower Skia route. Stops at the first curve verb, where a curved
+ * shape's stroke fails within its first corner. [points] is the scratch for one segment (8 floats). Allocates the
+ * iterator.
+ */
+private fun mayBeStrokeRects(stroke: Path, points: FloatArray): Boolean {
+  val iterator = stroke.iterator(PathIterator.ConicEvaluation.AsConic, 0.25f)
+  var contours = 0
+  // The current contour's direction runs and the last run's direction (0 +x, 1 +y, 2 −x, 3 −y; −1: none yet).
+  var runs = 0
+  var direction = -1
+  while (iterator.hasNext()) {
+    when (iterator.next(points, 0)) {
+      PathSegment.Type.Move,
+      PathSegment.Type.Close -> {
+        runs = 0
+        direction = -1
+      }
+      PathSegment.Type.Line -> {
+        // The segment's start, then its end.
+        val dx = points[2] - points[0]
+        val dy = points[3] - points[1]
+        if (!axisAligned(points[0], points[1], points[2], points[3])) return false
+        if (!nearPoint(points[0], points[1], points[2], points[3])) {
+          val d = if (abs(dx) >= abs(dy)) (if (dx > 0f) 0 else 2) else (if (dy > 0f) 1 else 3)
+          if (d != direction) {
+            if (runs == 0 && ++contours > 2) return false
+            if (++runs > 5) return false
+            direction = d
+          }
+        }
+      }
+      PathSegment.Type.Done -> break
+      else -> return false
+    }
+  }
+  return true
+}
+
+/**
+ * Whether Skia draws the drop shadow's spread stroke (`2·spread` wide, anti-aliased) as a hairline: under a translate
+ * `DrawTreatAAStrokeAsHairline` measures the width itself, and takes a width ≤ 1 px.
+ */
+private fun hairlineSpread(spread: Float): Boolean = spread > 0f && spread * 2f <= 1f
+
+/** The segment from ([x0], [y0]) to ([x1], [y1]) is shorter than [AXIS_TOLERANCE] on both axes. */
+private fun nearPoint(x0: Float, y0: Float, x1: Float, y1: Float): Boolean =
+  abs(x1 - x0) <= AXIS_TOLERANCE && abs(y1 - y0) <= AXIS_TOLERANCE
 
 /** The segment from ([x0], [y0]) to ([x1], [y1]) is vertical or horizontal within [AXIS_TOLERANCE]. */
 private fun axisAligned(x0: Float, y0: Float, x1: Float, y1: Float): Boolean =

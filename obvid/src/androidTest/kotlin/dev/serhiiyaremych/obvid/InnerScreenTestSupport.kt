@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.ScreenCases.Impl
 import dev.serhiiyaremych.obvid.ScreenCases.Paint
 import dev.serhiiyaremych.obvid.ScreenCases.shadowOf
@@ -93,15 +94,17 @@ internal object InnerScreenCases {
     val name: String,
     val shape: Shape,
     val sizeDp: Int,
-    val radiusDp: Int,
-    val spreadDp: Int,
+    val radiusDp: Float,
+    val spreadDp: Float,
     val paint: Paint,
     val block: Boolean,
     val bands: Boolean?,
     val transformed: Boolean,
   ) {
     val label
-      get() = "$name ${sizeDp}dp r$radiusDp s$spreadDp ${paint.name} ${if (block) "block" else "shadow"}" +
+      get() =
+        "$name ${sizeDp}dp r${MaskRouteGapCases.fmt(radiusDp)} s${MaskRouteGapCases.fmt(spreadDp)} ${paint.name} " +
+          (if (block) "block" else "shadow") +
         if (transformed) " layer" else ""
   }
 
@@ -110,7 +113,10 @@ internal object InnerScreenCases {
    * (offset (3, 5) dp), a round rect on the nine-patch (spread 0 and 8 dp, both overloads), mixed corners on the mask
    * route (spread 0, both overloads; spread 8 dp, the path with spread), the morph (a concave path: no bands, its
    * renderer depends on the clip), the circle (the oval's full mask), a frame (its 0s lie in the frame's band: no
-   * bands); then paints on the round rect: a gradient brush, alpha 0.5,
+   * bands), a convex path with an inverse fill (it covers the whole clip: no bands; spread 0, the Skia route, and 8 dp,
+   * the path with spread), and [MaskRouteGapCases.inverseRectShape] at 48 dp, radius 1 px, spread 0.5 px, no offset
+   * (its intermediate leaves a large hole: without the inverse-fill check it would go in bands); then paints on the
+   * round rect: a gradient brush, alpha 0.5,
    * a large offset, and blend modes with bands (`SrcAtop`, `DstOut`, `Screen`) and without (`Multiply`, which a
    * transparent source may change).
    */
@@ -118,26 +124,33 @@ internal object InnerScreenCases {
     val byName = shapes.associateBy { it.name }
     fun shape(n: String) = byName.getValue(n).shape
     val paints = paintVariants.associateBy { it.name }
+    val invTriangle = TriangleStarShape(curved = false, android.graphics.Path.FillType.INVERSE_WINDING)
+    val invRect = MaskRouteGapCases.inverseRectShape().shape
+    val density = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+    fun dpOf(px: Float) = MaskRouteGapCases.dpOf(px, density)
     val plain =
       listOf(
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, basePaint, false, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, basePaint, true, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 8, basePaint, false, true, false),
-        BandCase("mixed", shape("mixed"), 200, 4, 0, basePaint, false, true, false),
-        BandCase("mixed", shape("mixed"), 200, 4, 0, basePaint, true, true, false),
-        BandCase("mixed", shape("mixed"), 200, 4, 8, basePaint, false, null, false),
-        BandCase("morph", shape("morph"), 200, 4, 0, basePaint, false, false, false),
-        BandCase("morph", shape("morph"), 200, 4, 0, basePaint, true, false, false),
-        BandCase("circle", shape("circle"), 200, 4, 0, basePaint, false, null, false),
-        BandCase("frame", FrameShape(evenOdd = false), 200, 4, 0, basePaint, false, false, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("brush-linear"), false, true, false),
-        BandCase("mixed", shape("mixed"), 200, 4, 0, paints.getValue("brush-linear"), true, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("alpha-0.5"), false, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("offset-large"), false, null, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("srcatop"), false, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("dstout"), false, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("screen"), false, true, false),
-        BandCase("rrect16", shape("rrect16"), 200, 4, 0, paints.getValue("multiply"), false, false, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, basePaint, false, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, basePaint, true, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 8f, basePaint, false, true, false),
+        BandCase("mixed", shape("mixed"), 200, 4f, 0f, basePaint, false, true, false),
+        BandCase("mixed", shape("mixed"), 200, 4f, 0f, basePaint, true, true, false),
+        BandCase("mixed", shape("mixed"), 200, 4f, 8f, basePaint, false, null, false),
+        BandCase("morph", shape("morph"), 200, 4f, 0f, basePaint, false, false, false),
+        BandCase("morph", shape("morph"), 200, 4f, 0f, basePaint, true, false, false),
+        BandCase("circle", shape("circle"), 200, 4f, 0f, basePaint, false, null, false),
+        BandCase("frame", FrameShape(evenOdd = false), 200, 4f, 0f, basePaint, false, false, false),
+        BandCase("triangleInvWinding", invTriangle, 200, 4f, 0f, basePaint, false, false, false),
+        BandCase("triangleInvWinding", invTriangle, 200, 4f, 8f, basePaint, false, false, false),
+        BandCase("rectInvWinding", invRect, 48, dpOf(1f), dpOf(0.5f), ScreenCases.basePaint, false, false, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("brush-linear"), false, true, false),
+        BandCase("mixed", shape("mixed"), 200, 4f, 0f, paints.getValue("brush-linear"), true, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("alpha-0.5"), false, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("offset-large"), false, null, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("srcatop"), false, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("dstout"), false, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("screen"), false, true, false),
+        BandCase("rrect16", shape("rrect16"), 200, 4f, 0f, paints.getValue("multiply"), false, false, false),
       )
     return plain +
       plain.map { BandCase(it.name, it.shape, it.sizeDp, it.radiusDp, it.spreadDp, it.paint, it.block, it.bands, true) }

@@ -7,6 +7,11 @@
   rebuild on a Pixel 6 is 3.0–4.1 times faster than Compose for paths and circles, and 5.2–8.5 times for round rects.
   Before, these shadows used the Skia of the device: about 1.1 times faster than Compose, and round rects at 0.9 dp
   were slower. The pixels stay identical to Compose on Android 16–17.
+- Fixed: three kinds of rare paths differed from Compose on every Android version
+  ([#4](https://github.com/desugar-64/obvid/issues/4)): paths with an inverse fill type (drop and inner shadows), drop
+  shadows with a spread of 0.5 px or less, and drop shadows whose spread stroke is a rect (for example a straight line
+  with a spread). They now use the Skia of the device, as in Compose. With `ShadowExtent.Full`, an inverse fill keeps
+  the bitmap of Compose.
 
 ## 0.1.0
 

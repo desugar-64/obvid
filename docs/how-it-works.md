@@ -60,8 +60,10 @@ On the CPU, Skia selects a route for each shape. Obvid uses the same routes:
   change of offset, size, or spread only stretches the copy again.
 - **Frames** (two nested rects): the rect nine-patch of Skia, the same stretch without a center.
 - **Routes that stay on the Skia of the device:** rects and rect-shaped paths (the analytic rect blur of Skia), radius
-  0, inner shadows of paths with positive spread at some offsets, and drop-shadow frames with positive spread. For
-  these routes, Obvid runs the Compose calls into its own bitmap.
+  0, inner shadows of paths with positive spread at some offsets, drop-shadow frames with positive spread, paths with
+  an inverse fill type (Skia bounds their mask by the canvas, not by the path), drop shadows with a spread of 0.5 px
+  or less (Skia draws the spread stroke as a hairline), and drop shadows whose spread stroke is a rect or two nested
+  rects (the analytic rect blur again). For these routes, Obvid runs the Compose calls into its own bitmap.
 
 If the device is not arm64 or the native library does not load, the modifiers are the Compose modifiers.
 

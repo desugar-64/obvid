@@ -301,7 +301,7 @@ of Android 8 and 9, the measured difference is PSNR 42–67 dB; round rects diff
 ## Limits
 
 - [**arm64-v8a only.**](docs/limits.md#arm64-v8a-only) Other ABIs use the Compose shadows.
-- [**Some shadows are not faster:**](docs/limits.md#some-cases-use-the-skia-of-the-device) rects and blur radius 0 use the blur of the device's Skia, as in Compose.
+- [**Some shadows are not faster:**](docs/limits.md#some-cases-use-the-skia-of-the-device) rects, blur radius 0 and a few rare paths use the blur of the device's Skia, as in Compose.
 - [**Compose's hard edge stays by default.**](docs/limits.md#composes-hard-edge-stays-by-default) A Compose shadow stops at a fixed distance from the shape, so a strong glow can end at a visible line. `ShadowExtent.Full` removes it for drop shadows.
 - [**Compose 1.13 or newer, minSdk 24.**](docs/limits.md#compose-113-or-newer-minsdk-24)
 - [**Threads:**](docs/limits.md#threads) no background threads. The thread that draws a shadow builds it, as in Compose.
