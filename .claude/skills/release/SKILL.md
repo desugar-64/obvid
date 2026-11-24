@@ -37,9 +37,7 @@ release cannot be taken back: only start one when the user asks for it in their 
 
 `GH` selects the GitHub CLI (default `gh`), for a setup with several accounts.
 
-1. **Full device suite** on the Pixel 6, on an up-to-date `main` (`build-and-measure` skill, "Device tests"): every
-   test passes. Pull requests run only the fast set; this run covers the screen tests, races and long sweeps.
-2. **Bump**, from an up-to-date `main`:
+1. **Bump**, from an up-to-date `main`:
    ```sh
    git switch main && git pull --ff-only
    git switch -c release-<version>
@@ -48,15 +46,21 @@ release cannot be taken back: only start one when the user asks for it in their 
    It sets the version from the newest tag, renames `## Unreleased` to `## <version>` and puts a new empty
    `## Unreleased` above it. It stops if the section is empty or a bump is already waiting for its release. Read the
    section: it is the release text, written for people who use Obvid.
-3. **Release pull request:** commit `release: <version>`, push, and open it (`${GH:-gh} pr create --title "Release
+2. **Release pull request:** commit `release: <version>`, push, and open it (`${GH:-gh} pr create --title "Release
    <version>"`, body in the `feature-issue` skill's format: the AI line, STE). The user merges it.
-4. **Tag**, once CI has passed on the merge commit in `main`:
+3. **Full device suite** on the Pixel 6, on the merge commit of the release pull request, once CI has passed on it
+   (`build-and-measure` skill, "Device tests"): every test passes. It covers what pull requests may skip.
    ```sh
    git switch main && git pull --ff-only
+   ./gradlew :obvid:connectedDebugAndroidTest
+   ```
+4. **Tag** that commit, without a new pull:
+   ```sh
    GH=<cli> scripts/release.sh <version>      # --dry-run: every check, no tag
    ```
-   It checks a clean `main` that matches GitHub, the version (`version.sh --new`), the changelog section, green CI on
-   that commit and a new tag, shows the release text, asks once, then pushes `v<version>`.
+   It checks a clean `main` that matches GitHub (if `main` moved since the device run, pull and run the suite again),
+   the version (`version.sh --new`), the changelog section, green CI on that commit and a new tag, shows the release
+   text, asks once, then pushes `v<version>`.
 5. **Watch** the run of this tag: `${GH:-gh} run list --workflow release.yml --branch v<version> --limit 1`, then
    `${GH:-gh} run watch <id>`.
 6. **Verify:**
