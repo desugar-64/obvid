@@ -43,7 +43,7 @@ release cannot be taken back: only start one when the user asks for it in their 
    `## Unreleased` above it. It stops if the section is empty or a bump is already waiting for its release. Read the
    section: it is the release text, written for people who use Obvid.
 2. **Release pull request:** commit `release: <version>`, push, and open it (`${GH:-gh} pr create --title "Release
-   <version>"`, body starting with the AI line from the `feature-issue` skill). The user merges it.
+   <version>"`, body in the `feature-issue` skill's format: the AI line, STE). The user merges it.
 3. **Tag**, once CI has passed on the merge commit in `main`:
    ```sh
    git switch main && git pull --ff-only

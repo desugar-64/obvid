@@ -57,7 +57,9 @@ changes) goes at the end of What and why.
 The repo is public. Issues are read by people who know nothing of the working notes:
 - No references to local files that are not in the repo (working docs, `results/`, plans, traces), no device serials,
   no local paths. Quote the numbers themselves.
-- Plain short sentences, the README's vocabulary. Never write "byte-identical"; write "identical".
+- Write in ASD-STE100 Simplified Technical English (STE): one topic per sentence, at most 20 words in an
+  instruction and 25 in a description, active voice, one instruction per sentence, one meaning per word, the README's
+  vocabulary. Short lists, not walls of text. Never write "byte-identical"; write "identical".
 - Code links: `https://github.com/desugar-64/obvid/blob/<full SHA>/<path>#L<a>-L<b>`, the SHA being `origin/main`.
 
 ## Filing
