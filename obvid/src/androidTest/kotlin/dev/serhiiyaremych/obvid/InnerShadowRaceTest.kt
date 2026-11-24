@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.InnerScreenCases.Animated
@@ -69,6 +70,7 @@ import org.junit.runner.RunWith
  */
 // PixelCopy.request(Window, …) needs API 26.
 @SdkSuppress(minSdkVersion = 26)
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class InnerShadowRaceTest {
 

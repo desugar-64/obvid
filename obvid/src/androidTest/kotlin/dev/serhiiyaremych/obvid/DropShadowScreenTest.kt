@@ -19,6 +19,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
 import dev.serhiiyaremych.obvid.ScreenCases.Case
 import dev.serhiiyaremych.obvid.ScreenCases.Cell
@@ -56,6 +57,7 @@ import org.junit.runner.RunWith
  */
 // captureToImage needs API 26.
 @SdkSuppress(minSdkVersion = 26)
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class DropShadowScreenTest {
 

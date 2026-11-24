@@ -18,7 +18,8 @@ docs/how-it-works.md.
 - `cd obvid/rust && cargo test --release`: host tests; the NEON tests need an arm64 host.
 - The build fails if `neon::box3::steps` stops compiling to NEON `smlal` (`:obvid:cargoBuild{Plain,Testing}Codegen`
   disassembles the unstripped `.so`).
-- Device tests: `./gradlew :obvid:connectedDebugAndroidTest` (identity with Compose is asserted on Android 16–17).
+- Device tests: `./gradlew :obvid:connectedDebugAndroidTest` (identity with Compose is asserted on Android 16–17). A
+  fast set for pull requests skips the `@LargeTest` tests: commands and rules in the `build-and-measure` skill.
 - `./gradlew :obvid:publishToMavenLocal`: `dev.serhiiyaremych:obvid` into `~/.m2`. The version lives only in
   `gradle.properties` (`obvid.version`). Releases: the `release` skill (`.claude/skills/release/SKILL.md`), only when
   the user asks for one.

@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.InnerShadowReference
@@ -145,6 +146,7 @@ class NinePatchReuseTest {
   }
 
   @Test
+  @LargeTest
   fun randomSequencesMatchCompose() {
     val start = SystemClock.elapsedRealtime()
     val steps = ArrayList<Step>()

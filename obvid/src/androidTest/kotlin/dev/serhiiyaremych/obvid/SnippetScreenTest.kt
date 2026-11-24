@@ -27,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
 import dev.serhiiyaremych.obvid.ScreenCases.showOverLockScreen
 import org.junit.After
@@ -67,6 +68,7 @@ import dev.serhiiyaremych.obvid.snippets.obvid.SimpleInnerShadowUsage as ObvidSi
  */
 // captureToImage needs API 26.
 @SdkSuppress(minSdkVersion = 26)
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class SnippetScreenTest {
 

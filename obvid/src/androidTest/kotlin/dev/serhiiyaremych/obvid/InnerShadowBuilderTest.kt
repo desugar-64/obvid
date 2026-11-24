@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
@@ -228,6 +229,7 @@ class InnerShadowBuilderTest {
   }
 
   @Test
+  @LargeTest
   fun edgeOffsetsMatchCompose() {
     val start = SystemClock.elapsedRealtime()
     val roundShapes = listOf("rrect16", "rrect40").map { ShapeCase(it, if (it == "rrect16") catalogShape(it) else RoundedCornerShape(40.dp)) }
@@ -645,6 +647,7 @@ class InnerShadowBuilderTest {
   }
 
   @Test
+  @LargeTest
   fun nestedRectEdgeCasesMatchCompose() {
     val start = SystemClock.elapsedRealtime()
     val nested = NestedRectsEdgeShape.KINDS
@@ -700,6 +703,7 @@ class InnerShadowBuilderTest {
     }
 
   @Test
+  @LargeTest
   fun pathSpreadOffsetsMatchCompose() {
     val start = SystemClock.elapsedRealtime()
     val random = Random(SEED)

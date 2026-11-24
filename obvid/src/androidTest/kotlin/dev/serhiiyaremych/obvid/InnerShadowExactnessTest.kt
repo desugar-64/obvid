@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.fixtures.CaseGeometry
 import dev.serhiiyaremych.obvid.fixtures.InnerShadowReference
@@ -94,6 +95,7 @@ import androidx.compose.ui.graphics.Canvas as ComposeCanvas
  * row per case, and `inner0-exactness-summary.txt`, per hypothesis: cases, identical, max diff, first mismatching
  * case ids. Logcat tag `FS-Inner0`.
  */
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class InnerShadowExactnessTest {
 
