@@ -81,6 +81,8 @@ Several issues at once: draft them all, get one approval for the set, file them 
 - Commit only when the user asks. Commit subjects in the repo's style (`scope: what changed`).
 - If the feature changes what users get, add its line under `## Unreleased` in `CHANGELOG.md`, with a link to the
   issue. Never edit the version: that is the `release` skill's job.
+- Device tests: the fast set, or the full suite for the areas that the `build-and-measure` skill lists under "Device
+  tests". The PR's Validation names the set.
 
 ## Pull request
 

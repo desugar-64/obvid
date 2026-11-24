@@ -34,7 +34,29 @@ cd obvid/rust && cargo test --release             # host tests; the NEON ones ne
 - Results go to `results/<ro.product.model>/<run>/` (gitignored).
 
 ## Device tests
-`./gradlew :obvid:connectedDebugAndroidTest`, or with outputs kept:
+Two sets, both on the Pixel 6 (Android 17):
+- **Fast set** (about 5 min, 57 tests): the identity grids, routes, rebuild rules, store and lifecycle tests.
+  ```sh
+  ./gradlew :obvid:connectedDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.notAnnotation=androidx.test.filters.LargeTest
+  ```
+- **Full suite** (about 32 min, 76 tests): also the `@LargeTest` tests: screen tests, races, the long inner offset
+  sweeps and edge cases, `InnerShadowExactnessTest`, `CrossVersionQualityTest`.
+
+Every pull request runs the fast set. It runs the full suite instead when it changes one of these (only `@LargeTest`
+tests cover them):
+- the draw path or the modifier nodes (screen tests);
+- the choice of the Compose fallback (`fallbackMatchesCompose`);
+- the store or threading (races);
+- the inner offset and spread routes, or inner frames (the long inner sweeps, `nestedRectEdgeCasesMatchCompose`);
+- the reuse of the nine-patch's blurred mask (`NinePatchReuseTest#randomSequencesMatchCompose`).
+
+The full suite also runs before every release (`release` skill). A new slow test gets `@LargeTest` when it would push
+the fast set past 5 minutes.
+
+`./gradlew :obvid:connectedDebugAndroidTest` (full suite), or with outputs kept, after
+`./gradlew :obvid:installDebugAndroidTest` (an older test APK has no `@LargeTest` marks; add `-e notAnnotation
+androidx.test.filters.LargeTest` for the fast set):
 ```sh
 OUT=/sdcard/Android/media/dev.serhiiyaremych.obvid.test/additional_test_output
 adb shell am instrument -w -r -e additionalTestOutputDir $OUT \
