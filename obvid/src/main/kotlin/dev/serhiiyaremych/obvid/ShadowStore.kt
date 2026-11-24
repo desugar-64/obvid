@@ -10,9 +10,13 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.collection.MutableScatterMap
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -80,7 +84,12 @@ internal class ShadowEntry(val key: ShadowGeometry) {
    */
   fun build(builder: ShadowBitmapBuilder, density: Density, mayPublish: Boolean) {
     val k = key
-    val outline = bitmaps.outline ?: k.shape.createOutline(k.size, k.layoutDirection, density)
+    build(builder, bitmaps.outline ?: k.shape.createOutline(k.size, k.layoutDirection, density), mayPublish)
+  }
+
+  /** [build] with the [outline] already made (on the UI thread: a [ShadowPrefetch] builds on a worker). */
+  fun build(builder: ShadowBitmapBuilder, outline: Outline, mayPublish: Boolean) {
+    val k = key
     val preserve = sampledByShader || sharedSinceBuild
     if (k.inner) {
       builder.buildInner(
@@ -314,6 +323,99 @@ internal class ShadowStore(
     }
   }
 
+  /** Debug counter: the [buildCount] builds a worker made and a draw adopted ([adopt]). */
+  var adoptCount: Long = 0
+    private set
+
+  /** First builds queued at measure and not yet taken by a draw, by key ([ShadowPrefetch]). */
+  private val prefetches = MutableScatterMap<ShadowGeometry, ShadowPrefetch>()
+
+  /**
+   * The store's lookup key set to this geometry, for [prefetch] and for comparing with a job's key: valid until the
+   * next call that sets it ([key], [obtain]).
+   */
+  fun key(
+    shape: Shape,
+    size: Size,
+    layoutDirection: LayoutDirection,
+    density: Float,
+    radiusPx: Float,
+    spreadPx: Float,
+    inner: Boolean,
+    offsetXPx: Float,
+    offsetYPx: Float,
+    extent: ShadowExtent,
+  ): ShadowGeometry =
+    lookup.set(shape, size, layoutDirection, density, radiusPx, spreadPx, inner, offsetXPx, offsetYPx, extent)
+
+  /**
+   * A queued first build of [key] ([key]'s result) for a node that has not drawn yet ([ShadowBuilds.Parallel]): a job
+   * of the same key queued for another node is shared. Null when the store already holds the key (the draw shares that
+   * entry) or no worker could be started. [density] is the node's, for `createOutline`.
+   */
+  fun prefetch(key: ShadowGeometry, density: Density): ShadowPrefetch? {
+    val queued = prefetches[key]
+    return when {
+      entries[key] != null -> null
+      queued != null -> queued.also { it.holders++ }
+      else -> queuePrefetch(key.copy(), density)
+    }
+  }
+
+  /**
+   * A job for [key], or null when none is queued. A shape whose outline reads state is left to the draw: the state
+   * can change before it (during placement, for example), and the draw then builds the outline the frame shows.
+   */
+  private fun queuePrefetch(key: ShadowGeometry, density: Density): ShadowPrefetch? {
+    var readsState = false
+    val made =
+      Snapshot.observe(readObserver = { readsState = true }) {
+        key.shape.createOutline(key.size, key.layoutDirection, density)
+      }
+    if (readsState) return null
+    val outline = ownOutline(made)
+    val job = ShadowPrefetch(key, outline, maxIdleBytes, keepsMasks = handler != null && !looperQuit)
+    val queued = ShadowWorkers.submit(job)
+    if (queued) prefetches[key] = job
+    return job.takeIf { queued }
+  }
+
+  /**
+   * [outline] for a worker to read while the UI thread goes on: a shape may reuse one path and rewrite it for another
+   * size (material3's `RoundedPolygon.toShape()` does), so a path is copied (with its fill type).
+   */
+  private fun ownOutline(outline: Outline): Outline =
+    if (outline is Outline.Generic) Outline.Generic(android.graphics.Path(outline.path.asAndroidPath()).asComposePath())
+    else outline
+
+  /** Whether a draw can take [job]'s entry: no holder took it yet, and the store does not hold its key. */
+  fun mayAdopt(job: ShadowPrefetch): Boolean = !job.taken && entries[job.key] == null
+
+  /** A holder lets go of [job] (without taking it, or after); the last one cancels it (a running build finishes). */
+  fun dropPrefetch(job: ShadowPrefetch) {
+    if (--job.holders > 0) return
+    prefetches.remove(job.key, job)
+    job.cancel()
+  }
+
+  /**
+   * [job]'s entry for the draw of one holder ([mayAdopt], a worker built it): in the store, and the job's published
+   * mask in the store's cache. The other holders then obtain the entry from the store.
+   */
+  fun adopt(job: ShadowPrefetch): ShadowEntry {
+    job.taken = true
+    prefetches.remove(job.key, job)
+    nineMasks.adoptFrom(job.masks)
+    val entry = job.takeEntry()
+    entry.refCount = 1
+    entries[entry.key] = entry
+    buildCount++
+    adoptCount++
+    dropPrefetch(job)
+    settle()
+    return entry
+  }
+
   /** Drops a node's reference to [entry]; the last one makes it idle (or drops it, [releaseRef]). */
   fun release(entry: ShadowEntry) {
     releaseRef(entry)
@@ -503,6 +605,9 @@ internal class ShadowStore(
 
   /** Test introspection: the published nine-patch masks, least recently used first. */
   fun nineMasksForTest(): List<NineMask> = nineMasks.publishedForTest()
+
+  /** Test introspection: the queued first builds no draw took yet. */
+  fun prefetchCountForTest(): Int = prefetches.size
 
   /** Test introspection: the number of keys in the published masks' map. */
   fun nineMaskMapSizeForTest(): Int = nineMasks.mapSizeForTest()

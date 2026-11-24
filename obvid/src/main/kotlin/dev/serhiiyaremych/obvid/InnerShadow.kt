@@ -16,7 +16,12 @@ import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.currentValueOf
+import androidx.compose.ui.node.requireDensity
+import androidx.compose.ui.node.requireLayoutDirection
 import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.draw.innerShadow as composeInnerShadow
 
 /**
@@ -97,13 +102,28 @@ internal class CpuBlockInnerShadowElement(val shape: Shape, val block: InnerShad
 // -------------------------------------------------------------------------------------------------------------------
 
 /** Compose's `SimpleInnerShadowNode` (the shadow, then the content), rebuilding only on a geometry change. */
-internal class CpuInnerShadowNode(var shape: Shape, var shadow: Shadow) :
-  Modifier.Node(), DrawModifierNode, CompositionLocalConsumerModifierNode {
+internal class CpuInnerShadowNode(var shape: Shape, var shadow: Shadow) : CpuShadowNode() {
 
   private val state = ShadowDrawState()
 
-  override fun onAttach() {
-    installShadowMemoryCallbacks()
+  override fun onMeasured(size: IntSize) {
+    if (state.wantsPrefetch && currentValueOf(LocalShadowBuilds) == ShadowBuilds.Parallel) {
+      val density = requireDensity()
+      with(density) {
+        state.prefetch(
+          density,
+          shape,
+          size.toSize(),
+          requireLayoutDirection(),
+          shadow.radius.toPx(),
+          shadow.spread.toPx(),
+          true,
+          shadow.offset.x.toPx(),
+          shadow.offset.y.toPx(),
+          ShadowExtent.Compose,
+        )
+      }
+    }
   }
 
   override fun ContentDrawScope.draw() {
@@ -122,6 +142,9 @@ internal class CpuBlockInnerShadowNode(shape: Shape, block: InnerShadowScope.() 
 
   override val scope: InnerShadowScope
     get() = this
+
+  override val inner: Boolean
+    get() = true
 
   override fun DrawScope.drawFinalShadow(
     shape: Shape,

@@ -26,6 +26,9 @@ internal object ObvidNative {
 
   // Shadow builder (`shadow::ShadowBuilder`, used by [ShadowBitmapBuilder]). 64-bit Arm only.
 
+  /** Binds the calling thread to the CPUs set in [mask] (bit n = CPU n): 0, or -1 when the kernel refuses. */
+  @JvmStatic external fun pinCurrentThread(mask: Long): Int
+
   /** A new native builder (kernel scratch and nine-patch mask buffer, grow-only). Free it with [builderDestroy]. */
   @JvmStatic external fun builderCreate(): Long
 
@@ -470,7 +473,7 @@ internal object ObvidNative {
  * modifiers delegate to Compose's own `dropShadow` / `innerShadow`.
  */
 internal object NativeShadows {
-  private const val EXPECTED_ABI = 1
+  private const val EXPECTED_ABI = 2
 
   val isAvailable: Boolean by lazy {
     try {

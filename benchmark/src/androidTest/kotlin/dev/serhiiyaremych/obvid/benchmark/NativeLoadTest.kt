@@ -15,5 +15,5 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class NativeLoadTest {
-  @Test fun libraryLoads() = assertEquals(1, ObvidTesting.abiVersion())
+  @Test fun libraryLoads() = assertEquals(2, ObvidTesting.abiVersion())
 }

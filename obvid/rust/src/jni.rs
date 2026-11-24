@@ -17,7 +17,7 @@ mod sys;
 mod testing;
 
 /// What both `abiVersion` exports return; bump it when the JNI surface the Kotlin side expects changes.
-const ABI_VERSION: i32 = 1;
+const ABI_VERSION: i32 = 2;
 
 /// Status codes of the exports that lock bitmaps (`builderBlur`, `builderNine`, `builderInvert`, …; 0 = success).
 #[cfg(target_os = "android")]

@@ -6,7 +6,8 @@
 //! the inner shadow's inversion and hole. The builder is 64-bit Arm only; the exports that lock bitmaps (`builderBlur`,
 //! `builderBlurFrom`, `builderNine`, `builderNineKeep`, `builderNinePlace`, their `…Inverted` and `…InvertedHole`
 //! twins,
-//! `builderNineRects`, `builderInvert`, `builderInvertHole`, `builderNineMaskHole`) are Android only (the host build has no libjnigraphics).
+//! `builderNineRects`, `builderInvert`, `builderInvertHole`, `builderNineMaskHole`) are Android only (the host build has no libjnigraphics),
+//! as is `pinCurrentThread` (bionic's `sched_setaffinity`), which binds a worker thread of `ShadowBuilds.Parallel` to a core.
 
 use alloc::boxed::Box;
 
@@ -955,4 +956,24 @@ pub extern "system" fn Java_dev_serhiiyaremych_obvid_ObvidNative_builderNineMask
     let keep_px = unsafe { core::slice::from_raw_parts(k.pixels as *const u8, k.len()) };
     shadow::nine::kept_mask_hole(A8 { pixels: keep_px, width: k.width, height: k.height, stride: k.stride }, &patch)
         .packed()
+}
+
+#[cfg(target_os = "android")]
+unsafe extern "C" {
+    /// bionic: `sched_setaffinity(2)`; pid 0 is the calling thread. `mask` holds `cpusetsize` bytes, bit n = CPU n.
+    fn sched_setaffinity(pid: i32, cpusetsize: usize, mask: *const u64) -> i32;
+}
+
+/// `ObvidNative.pinCurrentThread`: binds the calling thread to the CPUs set in `mask` (bit n = CPU n, CPUs 0–63).
+/// Returns 0, or -1 when the kernel refuses (a CPU outside the thread's cpuset, or none online).
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_serhiiyaremych_obvid_ObvidNative_pinCurrentThread(
+    _env: *mut JNIEnv,
+    _class: jclass,
+    mask: i64,
+) -> i32 {
+    let set = mask as u64;
+    // SAFETY: `set` is one readable u64, and the size passed is its size; the kernel reads no more.
+    unsafe { sched_setaffinity(0, core::mem::size_of::<u64>(), &set) }
 }

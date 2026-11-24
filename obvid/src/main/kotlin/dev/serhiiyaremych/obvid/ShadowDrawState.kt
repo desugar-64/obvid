@@ -3,6 +3,7 @@
 
 package dev.serhiiyaremych.obvid
 
+import android.annotation.SuppressLint
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.DropShadowScope
 import androidx.compose.ui.geometry.CornerRadius
@@ -23,12 +24,18 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
+import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.LayoutAwareModifierNode
 import androidx.compose.ui.node.currentValueOf
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireDensity
+import androidx.compose.ui.node.requireLayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toSize
 
 /**
  * A node's handle on its [ShadowEntry] plus the objects Compose's `ShadowRenderer` / `DropShadowRenderer` /
@@ -39,6 +46,9 @@ internal class ShadowDrawState {
   /** The store of the thread this node draws on, taken on the first draw after an attach. */
   private var store: ShadowStore? = null
   private var entry: ShadowEntry? = null
+
+  /** The first build started when the node was measured, until the draw takes it ([prefetch], [takePrefetch]). */
+  private var prefetch: ShadowPrefetch? = null
 
   private var tint: ColorFilter? = null
   private var tintColor: Color = Color.Unspecified
@@ -99,9 +109,10 @@ internal class ShadowDrawState {
     if (!(size.width > 0 && size.height > 0)) return
     val store = store ?: ShadowStore.current().also { this@ShadowDrawState.store = it }
     val entry =
-      store.obtain(
-        this@ShadowDrawState.entry, this, shape, size, layoutDirection, radiusPx, spreadPx, false, 0f, 0f, extent,
-      )
+      takePrefetch(store, shape, size, layoutDirection, density, radiusPx, spreadPx, false, 0f, 0f, extent)
+        ?: store.obtain(
+          this@ShadowDrawState.entry, this, shape, size, layoutDirection, radiusPx, spreadPx, false, 0f, 0f, extent,
+        )
     this@ShadowDrawState.entry = entry
     translate(offsetXPx, offsetYPx) {
       val offset = -(radiusPx + spreadPx)
@@ -174,7 +185,9 @@ internal class ShadowDrawState {
     if (!(size.width > 0 && size.height > 0)) return
     val store = store ?: ShadowStore.current().also { this@ShadowDrawState.store = it }
     val entry =
-      store.obtain(this@ShadowDrawState.entry, this, shape, size, layoutDirection, radiusPx, spreadPx, true, offsetXPx, offsetYPx)
+      takePrefetch(
+        store, shape, size, layoutDirection, density, radiusPx, spreadPx, true, offsetXPx, offsetYPx, ShadowExtent.Compose,
+      ) ?: store.obtain(this@ShadowDrawState.entry, this, shape, size, layoutDirection, radiusPx, spreadPx, true, offsetXPx, offsetYPx)
     this@ShadowDrawState.entry = entry
     // ShadowRenderer.drawShadow's filter: the tint only without a brush.
     val filter = if (brush == null && color.isSpecified) obtainTint(color) else null
@@ -238,7 +251,80 @@ internal class ShadowDrawState {
       mode == BlendMode.Plus ||
       mode == BlendMode.Screen
 
+  /** Whether the node has not built yet: [prefetch] may queue its first build. */
+  val wantsPrefetch: Boolean
+    get() = entry == null
+
+  /**
+   * Queues the first build of a node that has not drawn yet ([wantsPrefetch]) when it is measured, for the key the
+   * draw will compute from the same values ([density] is the node's, as the draw scope's is). A new key replaces the
+   * job of an earlier measure; an empty size (the draw draws nothing) drops it.
+   */
+  fun prefetch(
+    density: Density,
+    shape: Shape,
+    size: Size,
+    layoutDirection: LayoutDirection,
+    radiusPx: Float,
+    spreadPx: Float,
+    inner: Boolean,
+    offsetXPx: Float,
+    offsetYPx: Float,
+    extent: ShadowExtent,
+  ) {
+    val store = store ?: ShadowStore.current().also { this.store = it }
+    val key =
+      store.key(shape, size, layoutDirection, density.density, radiusPx, spreadPx, inner, offsetXPx, offsetYPx, extent)
+    val held = prefetch
+    if (held?.key != key) {
+      held?.let { store.dropPrefetch(it) }
+      prefetch = if (size.width > 0 && size.height > 0) store.prefetch(key, density) else null
+    }
+  }
+
+  /**
+   * The entry of this node's prefetched first build if it has this key, a worker built it (waiting while one is
+   * building it) and no other holder took it, else null: the caller then obtains the entry as usual
+   * ([ShadowStore.obtain]), also when no worker had started the job. A build that threw on the worker throws here, as
+   * it would have thrown from [ShadowStore.obtain]. The job is let go on every way out.
+   */
+  private fun takePrefetch(
+    store: ShadowStore,
+    shape: Shape,
+    size: Size,
+    layoutDirection: LayoutDirection,
+    density: Float,
+    radiusPx: Float,
+    spreadPx: Float,
+    inner: Boolean,
+    offsetXPx: Float,
+    offsetYPx: Float,
+    extent: ShadowExtent,
+  ): ShadowEntry? {
+    val job = prefetch ?: return null
+    prefetch = null
+    var taken: ShadowEntry? = null
+    try {
+      val key =
+        store.key(shape, size, layoutDirection, density, radiusPx, spreadPx, inner, offsetXPx, offsetYPx, extent)
+      if (job.key == key && store.mayAdopt(job) && !job.claimForDraw()) {
+        job.awaitWorker()?.let { throw it }
+        taken = store.adopt(job)
+      }
+    } finally {
+      if (taken == null) store.dropPrefetch(job)
+    }
+    return taken
+  }
+
+  /** Test hook: waits until a worker built this node's queued first build (none queued: returns at once). */
+  fun awaitPrefetchForTest() {
+    prefetch?.awaitWorker()
+  }
+
   fun release() {
+    prefetch?.let { store?.dropPrefetch(it) }
+    prefetch = null
     entry?.let { store?.release(it) }
     entry = null
     store = null
@@ -335,16 +421,68 @@ internal fun CompositionLocalConsumerModifierNode.installShadowMemoryCallbacks()
 }
 
 /**
+ * A shadow node: draw-only, as Compose's own. With [ShadowBuilds.Parallel] at attach, it also delegates a
+ * [ShadowMeasureNode], so that its layout's measurement queues the first build ([onMeasured]). Only then: Compose
+ * remeasures the layout of a layout-aware node when the node is inserted, so a node with [ShadowBuilds.Inline] stays
+ * draw-only. A node attached with [ShadowBuilds.Inline] builds in the draw until it is attached again.
+ */
+internal abstract class CpuShadowNode :
+  DelegatingNode(), DrawModifierNode, CompositionLocalConsumerModifierNode {
+
+  private var measureNode: ShadowMeasureNode? = null
+
+  // Read at attach on purpose: the mode decides then whether the node is layout-aware ([LocalShadowBuilds]). A node
+  // reused by a lazy layout keeps its delegate while detached, so each attach adds or drops it.
+  @SuppressLint("SuspiciousCompositionLocalModifierRead")
+  override fun onAttach() {
+    installShadowMemoryCallbacks()
+    val parallel = currentValueOf(LocalShadowBuilds) == ShadowBuilds.Parallel
+    val kept = measureNode
+    when {
+      parallel && kept == null -> measureNode = delegate(ShadowMeasureNode(::onMeasured))
+      !parallel && kept != null -> {
+        undelegate(kept)
+        measureNode = null
+      }
+    }
+  }
+
+  /** The layout measured this node at [size] ([ShadowBuilds.Parallel] at attach). */
+  protected abstract fun onMeasured(size: IntSize)
+}
+
+/** The layout-aware part of a [CpuShadowNode] with [ShadowBuilds.Parallel]. */
+internal class ShadowMeasureNode(private val onMeasured: (IntSize) -> Unit) :
+  Modifier.Node(), LayoutAwareModifierNode {
+
+  // Compose's automatic invalidation of an updated layout-aware node remeasures its layout; an update of the shadow
+  // changes only the draw, which the owner's own (automatic) invalidation covers.
+  override val shouldAutoInvalidate: Boolean
+    get() = false
+
+  override fun onRemeasured(size: IntSize) {
+    onMeasured(size)
+  }
+}
+
+/**
  * Compose's `SimpleDropShadowNode`, rebuilding only on a geometry change. [LocalShadowExtent] is read in the draw: a
  * change of it invalidates the draw of every node that reads it, which then rebuilds.
  */
-internal class CpuDropShadowNode(var shape: Shape, var shadow: Shadow) :
-  Modifier.Node(), DrawModifierNode, CompositionLocalConsumerModifierNode {
+internal class CpuDropShadowNode(var shape: Shape, var shadow: Shadow) : CpuShadowNode() {
 
   private val state = ShadowDrawState()
 
-  override fun onAttach() {
-    installShadowMemoryCallbacks()
+  override fun onMeasured(size: IntSize) {
+    if (state.wantsPrefetch && currentValueOf(LocalShadowBuilds) == ShadowBuilds.Parallel) {
+      val density = requireDensity()
+      val radiusPx = with(density) { shadow.radius.toPx() }
+      val spreadPx = with(density) { shadow.spread.toPx() }
+      val extent = currentValueOf(LocalShadowExtent)
+      state.prefetch(
+        density, shape, size.toSize(), requireLayoutDirection(), radiusPx, spreadPx, false, 0f, 0f, extent,
+      )
+    }
   }
 
   override fun ContentDrawScope.draw() {
@@ -369,9 +507,10 @@ internal class CpuDropShadowNode(var shape: Shape, var shadow: Shadow) :
  * element, or when the owner clears its observations (its view detached and reattached): nothing re-runs the block.
  */
 internal abstract class CpuBlockShadowNode<S : Density>(shape: Shape, block: S.() -> Unit) :
-  Modifier.Node(), DrawModifierNode, CompositionLocalConsumerModifierNode, Density {
+  CpuShadowNode(), Density {
 
   protected val state = ShadowDrawState()
+
   private var densityObject: Density? = null
 
   private var shape: Shape = shape
@@ -399,8 +538,8 @@ internal abstract class CpuBlockShadowNode<S : Density>(shape: Shape, block: S.(
   override val fontScale: Float
     get() = densityObject?.fontScale ?: 1f
 
-  // The scope's parameters. Written only by the block, which runs inside the draw: no invalidation needed (the draw
-  // observes the block's reads).
+  // The scope's parameters. Written only by the block, which runs in the draw (and, with ShadowBuilds.Parallel, once
+  // when the node is measured before its first build): no invalidation needed (the draw observes the block's reads).
   var radius: Float = 0f
   var spread: Float = 0f
   var offset: Offset = Offset.Zero
@@ -418,7 +557,7 @@ internal abstract class CpuBlockShadowNode<S : Density>(shape: Shape, block: S.(
   }
 
   override fun onAttach() {
-    installShadowMemoryCallbacks()
+    super.onAttach()
     updateDensity()
   }
 
@@ -455,6 +594,46 @@ internal abstract class CpuBlockShadowNode<S : Density>(shape: Shape, block: S.(
     drawBlockShadow(this)
     drawContent()
   }
+
+  override fun onMeasured(size: IntSize) {
+    if (state.wantsPrefetch && currentValueOf(LocalShadowBuilds) == ShadowBuilds.Parallel) {
+      prefetchBlockShadow(size.toSize())
+    }
+  }
+
+  /**
+   * The block run once as the draw will run it, its parameters converted as [drawBlockShadow] converts them, to queue
+   * the first build. A guess: the draw runs the block again, and another key builds inline. Compose calls
+   * `onRemeasured` without observing reads, so the block's reads stay the draw's alone.
+   */
+  private fun prefetchBlockShadow(size: Size) {
+    resetShadow()
+    scope.block()
+    val radiusDp = radius.toDp()
+    val spreadDp = spread.toDp()
+    val offsetXDp = offset.x.toDp()
+    val offsetYDp = offset.y.toDp()
+    val density = requireDensity()
+    with(density) {
+      // As the drop and the inner draw key it: a drop shadow's offset is not in its bitmap, an inner one's extent is
+      // always Compose's.
+      state.prefetch(
+        density,
+        shape,
+        size,
+        requireLayoutDirection(),
+        radiusDp.toPx(),
+        spreadDp.toPx(),
+        inner,
+        if (inner) offsetXDp.toPx() else 0f,
+        if (inner) offsetYDp.toPx() else 0f,
+        if (inner) ShadowExtent.Compose else currentValueOf(LocalShadowExtent),
+      )
+    }
+  }
+
+  /** An inner shadow ([drawFinalShadow] draws [ShadowDrawState.drawInnerShadow]) rather than a drop shadow. */
+  protected abstract val inner: Boolean
 
   /** The block node's `obtainPainter`'s `Shadow`, without allocating it, drawn by [drawFinalShadow]. */
   private fun drawBlockShadow(drawScope: DrawScope) {
@@ -509,6 +688,9 @@ internal class CpuBlockDropShadowNode(shape: Shape, block: DropShadowScope.() ->
 
   override val scope: DropShadowScope
     get() = this
+
+  override val inner: Boolean
+    get() = false
 
   override fun DrawScope.drawFinalShadow(
     shape: Shape,

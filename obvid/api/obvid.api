@@ -8,6 +8,18 @@ public final class dev/serhiiyaremych/obvid/InnerShadowKt {
 	public static final fun innerShadow (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/graphics/Shape;Lkotlin/jvm/functions/Function1;)Landroidx/compose/ui/Modifier;
 }
 
+public final class dev/serhiiyaremych/obvid/ShadowBuilds : java/lang/Enum {
+	public static final field Inline Ldev/serhiiyaremych/obvid/ShadowBuilds;
+	public static final field Parallel Ldev/serhiiyaremych/obvid/ShadowBuilds;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/serhiiyaremych/obvid/ShadowBuilds;
+	public static fun values ()[Ldev/serhiiyaremych/obvid/ShadowBuilds;
+}
+
+public final class dev/serhiiyaremych/obvid/ShadowBuildsKt {
+	public static final fun getLocalShadowBuilds ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
 public final class dev/serhiiyaremych/obvid/ShadowExtent : java/lang/Enum {
 	public static final field Compose Ldev/serhiiyaremych/obvid/ShadowExtent;
 	public static final field Full Ldev/serhiiyaremych/obvid/ShadowExtent;

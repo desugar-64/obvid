@@ -481,7 +481,9 @@ internal class ShadowBitmaps {
  * mask, the intermediate and the buffer the intermediate is placed in; the published nine-patch masks are [nineMasks]'
  * (the store's for a store's builder, which outlives its builders; a builder's own otherwise, which keeps nothing).
  */
-internal class ShadowBitmapBuilder(private val nineMasks: NineMaskCache = NineMaskCache()) : AutoCloseable {
+internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) : AutoCloseable {
+  /** The published masks the next builds use; a worker's builder takes each job's own ([ShadowPrefetch.masks]). */
+  var nineMasks: NineMaskCache = nineMasks
 
   enum class Route {
     Mask,
