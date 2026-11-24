@@ -431,7 +431,9 @@ fn into_with_stride_and_reused_scratch() {
 fn junk_in_scratch_does_not_matter() {
     let mut rng = Rng(12);
     for (n, &(width, height, sigma)) in
-        [(300, 200, 37.0), (17, 9, 2.0), (5, 70, 64.0), (64, 64, 100.0), (33, 33, 1.5), (40, 3, 128.0)].iter().enumerate()
+        [(300, 200, 37.0), (17, 9, 2.0), (5, 70, 64.0), (64, 64, 100.0), (33, 33, 1.5), (40, 3, 128.0)]
+            .iter()
+            .enumerate()
     {
         for skip in [InteriorSkip::Off, InteriorSkip::Auto, InteriorSkip::Always] {
             let src = mask(width, height, width, KINDS[n % KINDS.len()], &mut rng);
@@ -453,7 +455,19 @@ fn junk_in_scratch_does_not_matter() {
             let window = Window { x0: 1, y0: 1, x1: g.width, y1: g.height };
             let (ww, wh) = (g.width - 1, g.height - 1);
             let mut dst = vec![0u8; ww * wh];
-            blur_a8_window_into(&src, width, height, width, sigma, window, &mut dst, ww, Store::Replace, &mut scratch, skip);
+            blur_a8_window_into(
+                &src,
+                width,
+                height,
+                width,
+                sigma,
+                window,
+                &mut dst,
+                ww,
+                Store::Replace,
+                &mut scratch,
+                skip,
+            );
             for y in 0..wh {
                 assert_eq!(
                     &dst[y * ww..(y + 1) * ww],
