@@ -48,7 +48,8 @@ jobs:
             identical | behind) ;;
             *) echo "The tagged commit ${GITHUB_SHA::7} is not on main ($on_main)" >&2; exit 1 ;;
           esac
-          ci=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 1 --json status,conclusion \
+          ci=$(gh run list --workflow ci.yml --branch main --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json status,conclusion \
             --jq '.[0] | "\(.status) \(.conclusion)"')
           [ "$ci" = "completed success" ] || { echo "CI on ${GITHUB_SHA::7}: ${ci:-no run}" >&2; exit 1; }
       - name: Take the release notes from CHANGELOG.md
@@ -145,7 +146,7 @@ jobs:
           aar="obvid/build/maven-repo/dev/serhiiyaremych/obvid/$VERSION/obvid-$VERSION.aar"
           [ -f "$aar" ] || { echo "The build published no $aar" >&2; exit 1; }
           aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
-          "$aapt2" dump badging sample/build/outputs/apk/release/sample-release.apk | grep -q "versionName='$VERSION'" ||
+          "$aapt2" dump badging sample/build/outputs/apk/release/sample-release.apk | grep -qF "versionName='$VERSION'" ||
             { echo "The demo APK is not version $VERSION" >&2; exit 1; }
           mkdir release-files
           cp sample/build/outputs/apk/release/sample-release.apk "release-files/obvid-demo-$VERSION.apk"

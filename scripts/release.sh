@@ -32,7 +32,7 @@ built=$(scripts/version.sh --new) || exit 1
 notes=$(scripts/changelog.sh "$version") || exit 1
 
 # 3. CI passed on this commit.
-ci=$("$gh" run list --workflow ci.yml --commit "$head" --limit 1 --json status,conclusion \
+ci=$("$gh" run list --workflow ci.yml --branch main --event push --commit "$head" --limit 1 --json status,conclusion \
   --jq '.[0] | "\(.status) \(.conclusion)"' 2>/dev/null) || fail "cannot read CI runs with '$gh'"
 case "$ci" in
   "completed success") ;;

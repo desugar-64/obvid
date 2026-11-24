@@ -25,14 +25,19 @@ esac
 cd "$(git rev-parse --show-toplevel)"
 fail() { echo "version: $*" >&2; exit 1; }
 
-# Any spelling Java's properties loader reads as the key (spaces, `:`), so that a second line cannot win in Gradle.
-count=$(grep -cE '^[[:space:]]*obvid\.version[[:space:]]*[=:[:space:]]' gradle.properties || true)
+# Any spelling Java's properties loader reads as the key (spaces, `:`, an escaped dot, no value), so that a second
+# line cannot win in Gradle.
+count=$(grep -cE '^[[:space:]]*obvid\\?\.version([[:space:]=:]|$)' gradle.properties || true)
 [ "$count" = 1 ] || fail "gradle.properties must set obvid.version exactly once (found $count)"
 version=$(sed -n 's/^obvid\.version=\(.*\)$/\1/p' gradle.properties)
 [[ "$version" =~ ^(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$ ]] ||
   fail "gradle.properties: obvid.version '$version' is not <major>.<minor>.<patch>, each below 100"
 
 scripts/changelog.sh "$version" > /dev/null || exit 1
+# One exact `## Unreleased` heading, so that the check of its contents below sees all of them.
+count=$(grep -ciE '^##[[:space:]]*unreleased' CHANGELOG.md || true)
+[ "$count" = 1 ] && grep -qx '## Unreleased' CHANGELOG.md ||
+  fail "CHANGELOG.md must have exactly one '## Unreleased' heading (exactly that line)"
 
 grep -qxF "dependencies { implementation(\"dev.serhiiyaremych:obvid:$version\") }" README.md ||
   fail "README.md: the install line does not name $version (scripts/bump.sh sets it)"
@@ -54,7 +59,7 @@ if [ "$mode" = --tag ] && [ "$tag" != "v$version" ]; then
   fail "tag $tag does not match version $version in gradle.properties"
 fi
 if [ -n "$mode" ] && scripts/changelog.sh Unreleased > /dev/null 2>&1; then
-  fail "CHANGELOG.md: '## Unreleased' has changes that $version would ship without; bump again or move them"
+  fail "CHANGELOG.md: '## Unreleased' has changes that $version would ship without: move them into '## $version'"
 fi
 
 echo "$version"

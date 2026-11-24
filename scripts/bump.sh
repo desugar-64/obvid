@@ -45,12 +45,14 @@ next="$major.$minor.$patch"
 grep -qx '## Unreleased' CHANGELOG.md || fail "CHANGELOG.md has no '## Unreleased' heading (exactly that line)"
 scripts/changelog.sh Unreleased > /dev/null 2>&1 ||
   fail "CHANGELOG.md: the '## Unreleased' section is empty; add the changes of this release there first"
-! grep -qE "^## $next( |$)" CHANGELOG.md || fail "CHANGELOG.md already has a '## $next' section"
+! grep -qE "^## ${next//./\\.}( |$)" CHANGELOG.md || fail "CHANGELOG.md already has a '## $next' section"
 
 # Edits go through temporary files outside the work tree; any failure from here on restores the three files.
 tmp=$(mktemp -d)
+restore() { git checkout -- "${files[@]}"; echo "bump: stopped, ${files[*]} restored" >&2; }
 trap 'rm -rf "$tmp"' EXIT
-trap 'git checkout -- "${files[@]}"; echo "bump: failed, ${files[*]} restored" >&2' ERR
+trap restore ERR
+trap 'restore; exit 130' INT TERM HUP
 
 sed "s/^obvid\.version=.*/obvid.version=$next/" gradle.properties > "$tmp/gradle.properties"
 sed "s/^dependencies { implementation(\"dev\.serhiiyaremych:obvid:[^\"]*\") }$/dependencies { implementation(\"dev.serhiiyaremych:obvid:$next\") }/" \
@@ -62,5 +64,5 @@ awk -v next_version="$next" '
 for f in "${files[@]}"; do cat "$tmp/$f" > "$f"; done
 
 scripts/version.sh --new > /dev/null
-trap - ERR
+trap - ERR INT TERM HUP
 echo "Bumped $current → $next. Review 'git diff', commit it in a pull request; after the merge, run scripts/release.sh $next."
