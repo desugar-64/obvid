@@ -9,7 +9,7 @@ prints one line per trace: its kernel span (first to last sched/ftrace event) an
 nonzero data-loss stat, failed flushes first (a producer that does not answer a flush holds the capture until
 flush_timeout_ms and may lose its last chunks). Exit status 0 either way: a warning does not stop a batch.
 """
-import os, subprocess, sys, tempfile
+import atexit, http.client, os, socket, struct, subprocess, sys, tempfile, time
 
 TP = os.environ.get('TRACE_PROCESSOR', os.path.expanduser('~/.local/share/perfetto/prebuilts/trace_processor_shell'))
 
@@ -26,7 +26,15 @@ def cluster_for(path):
 
 
 def query(sql, trace):
-    """Rows of a trace_processor_shell query as lists of strings (quotes stripped, NULL as '[NULL]')."""
+    """Rows of a trace_processor_shell query as lists of strings (NULL as '[NULL]'), from a server that keeps [trace]
+    loaded across the calls for it (the analysis scripts query each trace many times in a row; parsing it once per
+    query was most of their run time). TP_ONE_SHOT=1: one trace_processor_shell run per query instead."""
+    if os.environ.get('TP_ONE_SHOT') == '1':
+        return _query_one_shot(sql, trace)
+    return _TraceServer.of(trace).query(sql)
+
+
+def _query_one_shot(sql, trace):
     with tempfile.NamedTemporaryFile('w', suffix='.sql', delete=False) as q:
         q.write(sql)
     try:
@@ -34,6 +42,158 @@ def query(sql, trace):
     finally:
         os.unlink(q.name)
     return [l.replace('"', '').split(',') for l in out.strip().splitlines()[1:]]
+
+
+class _TraceServer:
+    """`trace_processor_shell server http` on one trace (the RPC the Perfetto UI uses): POST /query with a QueryArgs
+    proto, the answer a stream of QueryResult protos (decoded by _decode_result). One server at a time: a query for
+    another trace stops it and starts that trace's."""
+    current = None
+
+    def __init__(self, trace):
+        self.trace = os.path.abspath(trace)
+        with socket.socket() as s:
+            s.bind(('127.0.0.1', 0))
+            self.port = s.getsockname()[1]
+        self.proc = subprocess.Popen([TP, 'server', 'http', '--port', str(self.port), self.trace],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.time() + 120
+        while not self._ready():
+            if self.proc.poll() is not None or time.time() > deadline:
+                raise RuntimeError(f'trace processor server did not start for {trace}')
+            time.sleep(0.05)
+
+    @classmethod
+    def of(cls, trace):
+        if cls.current is None or cls.current.trace != os.path.abspath(trace):
+            if cls.current is not None:
+                cls.current.stop()
+            cls.current = cls(trace)
+        return cls.current
+
+    def _ready(self):
+        try:
+            conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=2)
+            conn.request('GET', '/status')
+            ok = conn.getresponse().status == 200
+            conn.close()
+            return ok
+        except OSError:
+            return False
+
+    def query(self, sql):
+        body = sql.encode()
+        args = b'\x0a' + _varint(len(body)) + body  # QueryArgs.sql_query = 1
+        conn = http.client.HTTPConnection('127.0.0.1', self.port)
+        conn.request('POST', '/query', body=args)
+        data = conn.getresponse().read()
+        conn.close()
+        return _decode_result(data)
+
+    def stop(self):
+        self.proc.terminate()
+        self.proc.wait()
+
+
+atexit.register(lambda: _TraceServer.current and _TraceServer.current.stop())
+
+
+def _varint(n):
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+
+def _read_varint(buf, i):
+    shift = result = 0
+    while True:
+        b = buf[i]
+        i += 1
+        result |= (b & 0x7F) << shift
+        if not b & 0x80:
+            return result, i
+        shift += 7
+
+
+def _fields(buf):
+    """(field number, wire type, value) of a proto message: value is an int (varint, fixed) or bytes (length-delimited)."""
+    i = 0
+    while i < len(buf):
+        key, i = _read_varint(buf, i)
+        field, wire = key >> 3, key & 7
+        if wire == 0:
+            value, i = _read_varint(buf, i)
+        elif wire == 1:
+            value, i = buf[i:i + 8], i + 8
+        elif wire == 2:
+            n, i = _read_varint(buf, i)
+            value, i = buf[i:i + n], i + n
+        elif wire == 5:
+            value, i = buf[i:i + 4], i + 4
+        else:
+            raise ValueError(f'unsupported wire type {wire}')
+        yield field, wire, value
+
+
+def _decode_result(data):
+    """QueryResult (column_names = 1, error = 2, batch = 3); concatenated results merge. Each CellsBatch holds the
+    cells' types (1, packed), integers (2, packed), doubles (3, packed), blobs (4) and strings (5, NUL-separated),
+    consumed in cell order. Values as the one-shot path returns them: text, NULL as '[NULL]'. An error gives no rows,
+    as the one-shot path does."""
+    names, cells, error = [], [], ''
+    for field, wire, value in _fields(data):
+        if field == 1:
+            names.append(value)
+        elif field == 2:
+            error = value.decode(errors='replace')
+        elif field == 3:
+            types, ints, doubles, blobs, strings = [], [], [], [], []
+            for f, w, v in _fields(value):
+                if f == 1:
+                    types += _packed_varints(v) if w == 2 else [v]
+                elif f == 2:
+                    ints += _packed_varints(v) if w == 2 else [v]
+                elif f == 3:
+                    doubles += list(struct.unpack(f'<{len(v) // 8}d', v)) if w == 2 else [struct.unpack('<d', v)[0]]
+                elif f == 4:
+                    blobs.append(v)
+                elif f == 5:
+                    strings += v.decode(errors='replace').split('\0')[:-1]
+            it = {2: iter(ints), 3: iter(doubles), 4: iter(strings), 5: iter(blobs)}
+            for t in types:
+                if t == 1:
+                    cells.append('[NULL]')
+                elif t == 2:
+                    n = next(it[2])
+                    cells.append(str(n - (1 << 64) if n >= 1 << 63 else n))
+                elif t == 3:
+                    cells.append(f'{next(it[3]):f}')
+                elif t == 4:
+                    cells.append(next(it[4]))
+                else:
+                    cells.append('<blob>')
+    if error:
+        print(f'trace processor: {error.strip()}', file=sys.stderr)
+        return []
+    # The names come once; should a later chunk repeat them, the row width is the first set's.
+    columns = names.index(names[0], 1) if names.count(names[0]) > 1 else len(names)
+    if not columns:
+        return []
+    return [cells[i:i + columns] for i in range(0, len(cells), columns)]
+
+
+def _packed_varints(buf):
+    out, i = [], 0
+    while i < len(buf):
+        v, i = _read_varint(buf, i)
+        out.append(v)
+    return out
 
 
 def num(x):
