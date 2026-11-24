@@ -29,6 +29,7 @@ jobs:
     environment: release
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v7
       # The tag is v<version>, the version is not older than any release, and it has its changelog and README lines.
@@ -37,6 +38,19 @@ jobs:
         run: |
           version=$(scripts/version.sh --tag "$GITHUB_REF_NAME")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # As scripts/release.sh checks before it pushes the tag: the tagged commit is on main, and CI passed on it.
+      - name: Check that the tag is on main and passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+          case "$on_main" in
+            identical | behind) ;;
+            *) echo "The tagged commit ${GITHUB_SHA::7} is not on main ($on_main)" >&2; exit 1 ;;
+          esac
+          ci=$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 1 --json status,conclusion \
+            --jq '.[0] | "\(.status) \(.conclusion)"')
+          [ "$ci" = "completed success" ] || { echo "CI on ${GITHUB_SHA::7}: ${ci:-no run}" >&2; exit 1; }
       - name: Take the release notes from CHANGELOG.md
         run: scripts/changelog.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
       - uses: actions/setup-java@v6
@@ -125,6 +139,14 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          # The build used the checked version: Gradle could take obvid.version from elsewhere (-P, the environment).
+          # The Maven repository starts from gh-pages, which has no $VERSION yet (checked above): only this build
+          # can have written it.
+          aar="obvid/build/maven-repo/dev/serhiiyaremych/obvid/$VERSION/obvid-$VERSION.aar"
+          [ -f "$aar" ] || { echo "The build published no $aar" >&2; exit 1; }
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$aapt2" dump badging sample/build/outputs/apk/release/sample-release.apk | grep -q "versionName='$VERSION'" ||
+            { echo "The demo APK is not version $VERSION" >&2; exit 1; }
           mkdir release-files
           cp sample/build/outputs/apk/release/sample-release.apk "release-files/obvid-demo-$VERSION.apk"
           (cd obvid/build/outputs/native-debug-symbols && zip -r "$GITHUB_WORKSPACE/release-files/obvid-$VERSION-native-debug-symbols.zip" .)

@@ -12,7 +12,7 @@ release cannot be taken back: only start one when the user asks for it in their 
 ## Rules
 
 - **One version, one place:** `obvid.version` in `gradle.properties`. The library, its Maven files and the demo app
-  (`versionName`; `versionCode` = major·10000 + minor·100 + patch) read it. The README's dependency line names it too;
+  (`versionName`; `versionCode` = major·10000 + minor·100 + patch) read it. The README's install line names it too;
   `scripts/bump.sh` sets both. Never edit the version by hand.
 - **Tags:** `v<version>`, e.g. `v0.1.1`. Only the repository's admins can push one (a tag ruleset). The tag starts
   `.github/workflows/release.yml`, which runs to the end with no approval. Artifact names come from the version, not
@@ -22,9 +22,11 @@ release cannot be taken back: only start one when the user asks for it in their 
 - **Changelog:** every pull request that changes what users get adds its line under `## Unreleased` in
   `CHANGELOG.md`. At release time that section becomes the version's section and the release text.
 - **Checks** (`scripts/version.sh`; CI runs it on every push and pull request, `release.sh` and the release workflow run
-  it again): the version is `<major>.<minor>.<patch>` with minor and patch below 100, has a non-empty `CHANGELOG.md`
-  section, is named by the README's dependency line, and is not older than the newest `v*` tag. Before the tag it must
-  be newer.
+  it again): `gradle.properties` sets the version once, as `<major>.<minor>.<patch>` with each part below 100; it has a
+  non-empty `CHANGELOG.md` section, the README's install line names it, and it is not older than the newest `v*` tag.
+  Before the tag and in the release workflow it must also be newer than every earlier tag (the workflow: equal to its
+  own), and `## Unreleased` must be empty: a change merged after the bump needs another bump first. The workflow also
+  checks that the tagged commit is on `main` with green CI, and that the build produced this version.
 
 ## Steps
 
@@ -48,7 +50,8 @@ release cannot be taken back: only start one when the user asks for it in their 
    ```
    It checks a clean `main` that matches GitHub, the version (`version.sh --new`), the changelog section, green CI on
    that commit and a new tag, shows the release text, asks once, then pushes `v<version>`.
-4. **Watch** the run: `${GH:-gh} run list --workflow release.yml --limit 1`, then `${GH:-gh} run watch <id>`.
+4. **Watch** the run of this tag: `${GH:-gh} run list --workflow release.yml --branch v<version> --limit 1`, then
+   `${GH:-gh} run watch <id>`.
 5. **Verify:**
    - `${GH:-gh} release view v<version>`: not a draft, marked Latest, with `obvid-demo-<version>.apk` and
      `obvid-<version>-native-debug-symbols.zip`.
@@ -60,8 +63,9 @@ release cannot be taken back: only start one when the user asks for it in their 
 The workflow publishes in order: run artifacts, a draft release, the Maven files to `gh-pages`, then the draft goes
 public.
 - **Before the `gh-pages` push** nothing is public. A transient failure (a network error): rerun it,
-  `${GH:-gh} run rerun <id>`; the new run replaces the draft. Otherwise fix the cause on `main` through a pull request. To release the same
-  version, the tag must move to the fixed commit: deleting and re-creating it needs the user (the tag ruleset). A new
-  patch version is often simpler.
+  `${GH:-gh} run rerun <id>`; the new run replaces the draft. Otherwise fix the cause on `main` through a pull
+  request. To release the same version, the tag must move to the fixed commit: deleting and re-creating it needs the
+  user (the tag ruleset). A new patch version is often simpler.
 - **After the `gh-pages` push** the Maven files are public and a complete draft is left; a new run refuses to overwrite
-  them. Publish the draft by hand: `${GH:-gh} release edit v<version> --draft=false --latest`.
+  them. Publish the draft by hand: `${GH:-gh} release edit v<version> --draft=false`, with `--latest` only when no
+  newer version is released.
