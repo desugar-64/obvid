@@ -38,16 +38,26 @@ the traces in the README. Each bar represents the `Choreographer#doFrame` of the
 their actual positions in time using the same scale.
 
 - **Compose:** The shadow takes 14.0 ms of a 22.1 ms frame. A single draw call performs both the blur and the blit.
-- **Obvid:** The shadow takes 3.9 ms of an 11.1 ms frame. The mask and blur require 0.6 ms. Writing the nine-patch into
-  the new bitmap takes 3.2 ms.
-
-The initial build writes into new memory, often on a little core after one idle second. A warm rebuild of the same card
-takes about 0.24 ms.
+- **Obvid:** The shadow takes 3.9 ms of an 11.1 ms frame. This is the first build of the shadow.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="media/frame-anatomy-dark.png">
-  <img src="media/frame-anatomy.png" alt="Two bars of one first frame on the Pad 5: Compose 22.1 ms with a 14.0 ms shadow block, Obvid 11.1 ms with a 3.9 ms shadow block split into mask and blur 0.6 ms and nine-patch write 3.2 ms" width="100%">
+  <img src="media/frame-anatomy.png" alt="Two bars of one first frame on the Pad 5: Compose 22.1 ms with a 14.0 ms shadow block, Obvid 11.1 ms with a 3.9 ms shadow block" width="100%">
 </picture>
+
+A warm rebuild of the same card takes about 0.24 ms. A profile of the first build (simpleperf, 10 app starts, the main
+thread on a Cortex-A55 at 1.8 GHz) shows these parts:
+
+| Part of the first build | ms |
+|---|---|
+| Blur of the nine-patch's small round rect, with the growth of its buffers | 1.55 |
+| Code that runs for the first time in the app process | approximately 1.0 |
+| Android `Canvas`: clear and draw the small round rect | 0.48 |
+| Nine-patch write into the new bitmap | 0.33 |
+| Bitmap allocation | 0.17 |
+
+A warm rebuild uses the blurred small round rect again, so it does not blur. The first build also writes into new
+memory: approximately 200 page faults.
 
 ### Routes
 
