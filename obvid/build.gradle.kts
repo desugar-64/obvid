@@ -16,7 +16,7 @@ plugins {
 }
 
 group = "dev.serhiiyaremych"
-version = "0.1.1"
+version = providers.gradleProperty("obvid.version").get()
 
 android {
   namespace = "dev.serhiiyaremych.obvid"

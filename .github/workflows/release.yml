@@ -1,4 +1,4 @@
-# Publishes a release for a tag `v<version>` (the version in obvid/build.gradle.kts):
+# Publishes a release for a tag `v<version>` (`obvid.version` in gradle.properties):
 # - the Maven artifacts into the gh-pages branch under maven/ (earlier versions are kept; an existing version is
 #   never overwritten), served at https://desugar-64.github.io/obvid/maven;
 # - a GitHub Release with the signed demo APK and the library's native debug symbols. Its text is the version's section
@@ -7,9 +7,9 @@
 # gh-pages, and last the draft is published. A failure before the gh-pages push leaves nothing public, and a new run
 # replaces the draft. A failure after it leaves a complete draft to publish by hand; a new run says so.
 #
-# The job runs in the `release` environment. Configure it in Settings > Environments with required reviewers, so that
-# every release waits for a manual approval. The signing secrets are repository secrets (Settings > Secrets and
-# variables > Actions) or secrets of that environment:
+# Only the repository's admins can push a `v*` tag (a tag ruleset); the tag starts the release, with no further
+# approval. The job runs in the `release` environment, which takes only `v*` tags. The signing secrets are repository
+# secrets (Settings > Secrets and variables > Actions) or secrets of that environment:
 #   SIGNING_KEYSTORE_BASE64  the demo app's keystore, base64-encoded
 #   SIGNING_KEYSTORE_PASSWORD, SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
 # GitHub Pages must serve the gh-pages branch (Settings > Pages).
@@ -31,14 +31,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - name: Check that the tag matches the library version
+      # The tag is v<version>, the version is not older than any release, and it has its changelog and README lines.
+      - name: Check the version
         id: version
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $version in obvid/build.gradle.kts" >&2
-            exit 1
-          fi
+          version=$(scripts/version.sh --tag "$GITHUB_REF_NAME")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Take the release notes from CHANGELOG.md
         run: scripts/changelog.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"

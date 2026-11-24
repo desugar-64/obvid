@@ -50,11 +50,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      # A version bump without a CHANGELOG.md entry fails here, before the release tag can be pushed.
-      - name: Check that CHANGELOG.md has an entry for the library version
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
-          scripts/changelog.sh "$version" > /dev/null
+      # A version without its CHANGELOG.md section or README line, or older than a release, fails here, before the
+      # release tag can be pushed.
+      - name: Check the version
+        run: scripts/version.sh
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

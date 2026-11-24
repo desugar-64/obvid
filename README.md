@@ -327,7 +327,7 @@ benchmarks, profiling, and tracing; it is written for coding agents, but also wo
 
 ## To do
 
-Ideas that were measured or scoped, but are not in 0.1.1:
+Ideas that were measured or scoped, but are not in Obvid yet:
 
 - [ ] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds.
 - [ ] [Faster first builds on little cores](docs/to-do.md#faster-first-builds-on-little-cores): 3.5 ms on a Pad 5 little core after idle.

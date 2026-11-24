@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Starts a release: checks that `main` is ready for version <version>, then creates and pushes the tag `v<version>`.
-# The tag starts .github/workflows/release.yml, which waits for approval in the `release` environment.
+# The tag starts .github/workflows/release.yml, which publishes the release without further approval.
 #
-# Before running: add a `## <version>` section to CHANGELOG.md, set `version = "<version>"` in obvid/build.gradle.kts,
-# push to `main`, and let CI finish.
+# Before running: scripts/bump.sh in a pull request, merged into `main`, and CI finished on `main`.
 #
 # Usage: scripts/release.sh <version> [--dry-run]
 #   --dry-run  run every check, then stop before the tag
@@ -26,9 +25,10 @@ git fetch --quiet origin main --tags
 head=$(git rev-parse HEAD)
 [ "$head" = "$(git rev-parse origin/main)" ] || fail "main differs from origin/main: pull or push first"
 
-# 2. The version and its changelog entry (the release workflow checks both again).
-built=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
-[ "$built" = "$version" ] || fail "obvid/build.gradle.kts has version $built, not $version"
+# 2. The version: newer than every release, with its changelog entry and README line (the release workflow checks
+# again).
+built=$(scripts/version.sh --new) || exit 1
+[ "$built" = "$version" ] || fail "gradle.properties has version $built, not $version"
 notes=$(scripts/changelog.sh "$version") || exit 1
 
 # 3. CI passed on this commit.
@@ -59,4 +59,4 @@ read -r -p "Push tag $tag? [y/N] " answer
 
 git tag "$tag" "$head"
 git push origin "$tag"
-echo "Pushed $tag. Approve the run under Actions > Release (it waits for the release environment)."
+echo "Pushed $tag. The release runs under Actions > Release."

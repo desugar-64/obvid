@@ -77,7 +77,8 @@ Several issues at once: draft them all, get one approval for the set, file them 
   an issue comment, AI line first.
 - Branch from an up-to-date `main`: `<issue number>-<short-slug>`, e.g. `12-neon-small-blur`.
 - Commit only when the user asks. Commit subjects in the repo's style (`scope: what changed`).
-- If the feature changes what users get, add the entry to `CHANGELOG.md` with a link to the issue.
+- If the feature changes what users get, add its line under `## Unreleased` in `CHANGELOG.md`, with a link to the
+  issue. Never edit the version: that is the `release` skill's job.
 
 ## Pull request
 

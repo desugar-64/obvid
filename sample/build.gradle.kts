@@ -17,6 +17,9 @@ val releaseSigning =
     .takeIf { values -> values.all { it != null } }
     ?.map { it!! }
 
+// The version of Obvid (gradle.properties), so that each release's demo installs over the previous one.
+val obvidVersion = providers.gradleProperty("obvid.version").get()
+
 android {
   namespace = "dev.serhiiyaremych.obvid.sample"
   compileSdk { version = release(37) { minorApiLevel = 1 } }
@@ -24,8 +27,10 @@ android {
     applicationId = "dev.serhiiyaremych.obvid.sample"
     minSdk = 31
     targetSdk = 37
-    versionCode = 2
-    versionName = "0.1.1"
+    // major·10000 + minor·100 + patch: scripts/version.sh keeps minor and patch below 100.
+    versionCode =
+      obvidVersion.split('.').map(String::toInt).let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
+    versionName = obvidVersion
     ndk { abiFilters += "arm64-v8a" }
   }
   signingConfigs {

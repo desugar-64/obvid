@@ -19,10 +19,9 @@ docs/how-it-works.md.
 - The build fails if `neon::box3::steps` stops compiling to NEON `smlal` (`:obvid:cargoBuild{Plain,Testing}Codegen`
   disassembles the unstripped `.so`).
 - Device tests: `./gradlew :obvid:connectedDebugAndroidTest` (identity with Compose is asserted on Android 16–17).
-- `./gradlew :obvid:publishToMavenLocal`: `dev.serhiiyaremych:obvid` into `~/.m2`. Releases are published by
-  `.github/workflows/release.yml` from a `v*` tag. Each version needs a `## <version>` section in `CHANGELOG.md`
-  (`scripts/changelog.sh` checks it in CI and makes it the release text). `scripts/release.sh <version>` checks a
-  clean, pushed `main`, the version, the changelog entry and green CI, then pushes the tag; the run waits for approval.
+- `./gradlew :obvid:publishToMavenLocal`: `dev.serhiiyaremych:obvid` into `~/.m2`. The version lives only in
+  `gradle.properties` (`obvid.version`). Releases: the `release` skill (`.claude/skills/release/SKILL.md`), only when
+  the user asks for one.
 - Add `--no-build-cache` if a sandbox blocks writes to `~/.gradle`.
 
 For device tests, benchmarks, profiling and traces, use the `build-and-measure` skill
