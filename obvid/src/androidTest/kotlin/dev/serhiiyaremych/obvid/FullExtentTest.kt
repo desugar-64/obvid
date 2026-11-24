@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
@@ -93,15 +94,31 @@ import androidx.compose.ui.graphics.Canvas as ComposeCanvas
  *
  * [smallBlurFullExtentMatchesAndroid]: [fullExtentMatchesAndroid]'s checks at blur radii under 2.6 px (σ < 2, Skia's
  * small blur), with the route asserted. Output: `full-extent-smallblur.csv`, `full-extent-smallblur-summary.txt`.
+ *
+ * [maskRouteGapsFullExtentMatchAndroid]: [fullExtentMatchesAndroid]'s checks for the spread strokes left to the Skia
+ * route ([MaskRouteGapCases]: hairlines, stroke rects), with the route asserted. Output: `full-extent-maskgaps.csv`,
+ * `full-extent-maskgaps-summary.txt`.
  */
 @RunWith(AndroidJUnit4::class)
 class FullExtentTest {
 
   @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
-  private class Case(val shape: ShapeCase, val widthDp: Int, val heightDp: Int, val radiusDp: Float, val spreadDp: Int) {
+  /** A shape on a box of [widthDp] × [heightDp] (whole px), or of [sizePx] square when it is > 0 (widths then 0). */
+  private class Case(
+    val shape: ShapeCase,
+    val widthDp: Int,
+    val heightDp: Int,
+    val radiusDp: Float,
+    val spreadDp: Float,
+    val sizePx: Float = 0f,
+  ) {
     val label
-      get() = "${shape.name} ${widthDp}x$heightDp r${fmt(radiusDp)} s$spreadDp"
+      get() = "${shape.name} ${if (sizePx > 0f) "${fmt(sizePx)}px" else "${widthDp}x$heightDp"} r${fmt(radiusDp)} s${fmt(spreadDp)}"
+
+    fun size(density: Density): Size =
+      if (sizePx > 0f) Size(sizePx, sizePx)
+      else with(density) { Size(widthDp.dp.roundToPx().toFloat(), heightDp.dp.roundToPx().toFloat()) }
   }
 
   private val cases =
@@ -111,10 +128,10 @@ class FullExtentTest {
           ShapeCase("frame", FrameShape(evenOdd = false)) +
           ShapeCase("rect", catalogShape("rect"))
       for (shape in shapes) for (sizeDp in listOf(48, 200)) for (radiusDp in listOf(4, 24, 36)) {
-        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, radiusDp.toFloat(), spreadDp))
+        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, radiusDp.toFloat(), spreadDp.toFloat()))
       }
       val pill = ShapeCase("pill", RoundedCornerShape(50))
-      for (radiusDp in listOf(24, 36)) for (spreadDp in listOf(0, 4)) add(Case(pill, 320, 56, radiusDp.toFloat(), spreadDp))
+      for (radiusDp in listOf(24, 36)) for (spreadDp in listOf(0, 4)) add(Case(pill, 320, 56, radiusDp.toFloat(), spreadDp.toFloat()))
     }
 
   /** The shapes of [cases] that take routes of Obvid's (not `rect`, which keeps the device Skia's). */
@@ -148,7 +165,7 @@ class FullExtentTest {
           case.widthDp,
           case.heightDp,
           fmt(case.radiusDp),
-          case.spreadDp,
+          fmt(case.spreadDp),
           route,
           w,
           h,
@@ -194,7 +211,7 @@ class FullExtentTest {
     val radii = SmallBlurCases.radii(density.density)
     val smallCases = buildList {
       for (shape in smallBlurShapes()) for (sizeDp in listOf(48, 200)) for ((_, r) in radii) {
-        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, r, spreadDp))
+        for (spreadDp in listOf(0, 8)) add(Case(shape, sizeDp, sizeDp, r, spreadDp.toFloat()))
       }
     }
     val pxRadii = radii.filter { it.first.startsWith("px") }.map { it.second }.toSet()
@@ -207,11 +224,11 @@ class FullExtentTest {
           in SmallBlurCases.PATH_SHAPES -> ShadowBitmapBuilder.Route.Mask.name
           in SmallBlurCases.ROUND_SHAPES -> null
           else ->
-            if (c.spreadDp > 0) {
+            if (c.spreadDp > 0f) {
               ShadowBitmapBuilder.Route.Skia.name
             } else {
               // The frame drawn under the window's translate (−origin) and Compose's translate by the radius.
-              val size = with(density) { Size(c.widthDp.dp.roundToPx().toFloat(), c.heightDp.dp.roundToPx().toFloat()) }
+              val size = c.size(density)
               val outline = c.shape.shape.createOutline(size, LayoutDirection.Ltr, density)
               val tx = (-o.originX).toFloat() + radius
               val ty = (-o.originY).toFloat() + radius
@@ -241,6 +258,54 @@ class FullExtentTest {
         assertTrue("route: ${o.csv()}", o.route in SmallBlurCases.ROUND_ROUTES)
       }
     }
+  }
+
+  /**
+   * [fullExtentMatchesAndroid]'s checks for the drop cases of [MaskRouteGapCases] other than the inverse fills: spread
+   * strokes up to 1 px wide, which Skia draws as hairlines (the window takes the path's bounds outset by 1 px for them),
+   * and spread strokes that may be rects, all on the Skia route; and the thin strokes just over 1 px on the mask route
+   * ([MaskRouteGapCases.expectedDropRoute], asserted). The inverse fills keep Compose's window with the full extent (no
+   * window holds their shadow), checked by `ShadowBitmapBuilderTest.maskRouteGapsMatchCompose`. Then two builds through
+   * one builder and one bitmap pair (shapes `reuse:…`): `pointQuad` (radius 1 px, spread 20 px: the Skia route), then a
+   * filled triangle (48 dp, radius 4 dp, spread 8 dp: the mask route), so the second build follows one that left the
+   * mask route. Output (subdir [RESULTS_DIR]): `full-extent-maskgaps.csv`, `full-extent-maskgaps-summary.txt`.
+   */
+  @Test
+  fun maskRouteGapsFullExtentMatchAndroid() {
+    check(NativeShadows.isAvailable)
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val density = Density(context)
+    val gapCases = MaskRouteGapCases.dropCases(density).filter { it.gap != MaskRouteGapCases.INVERSE }
+    val cases = gapCases.map { g -> Case(g.shape, 0, 0, g.radiusDp, g.spreadDp, g.sizePx) }
+    val d = density.density
+    val pointQuad = MaskRouteGapCases.pathStrokeShapes().first { it.first.name == "pointQuad" }
+    val reuseCases =
+      listOf(
+        Case(ShapeCase("reuse:pointQuad", pointQuad.first.shape), 0, 0, MaskRouteGapCases.dpOf(1f, d), MaskRouteGapCases.dpOf(pointQuad.second.first(), d), MaskRouteGapCases.PATH_BOX_PX),
+        Case(ShapeCase("reuse:triangle", TriangleStarShape(curved = false, android.graphics.Path.FillType.WINDING)), 48, 48, 4f, 8f),
+      )
+    val fresh = cases.map { c -> ShadowBitmapBuilder().use { b -> runCase(density, b, c) } }
+    val reused = ShadowBitmapBuilder().use { b ->
+      val target = ShadowBitmaps()
+      reuseCases.map { c -> runCase(density, b, c, target) }
+    }
+    val outcomes = fresh + reused
+    val expected =
+      (cases + reuseCases).map { c ->
+        val outline = c.shape.shape.createOutline(c.size(density), LayoutDirection.Ltr, density)
+        val local = checkNotNull(outlineParams(outline).path).asAndroidPath()
+        MaskRouteGapCases.expectedDropRoute(local, with(density) { c.radiusDp.dp.toPx() }, with(density) { c.spreadDp.dp.toPx() })
+      }
+    val ok = outcomes.indices.filter { outcomes[it].route == expected[it] }
+    val groups = gapCases.map { it.gap } + reuseCases.map { "reuse" }
+    val extra =
+      listOf("routes as expected ${ok.size} / ${outcomes.size}") +
+        outcomes.indices.groupBy { groups[it] }.map { (gap, idx) ->
+          "  $gap: identical to Android's blur ${idx.count { outcomes[it].truth.identical }} / ${idx.size}, routes as expected " +
+            "${idx.count { it in ok }} / ${idx.size}"
+        }
+    report(density, outcomes, MASKGAPS_CSV_NAME, MASKGAPS_SUMMARY_NAME, extra)
+    for (i in outcomes.indices) assertEquals("route: ${outcomes[i].csv()}", expected[i], outcomes[i].route)
   }
 
   /** Writes [outcomes]' rows and summary (plus [extra] lines) and asserts [fullExtentMatchesAndroid]'s checks. */
@@ -292,13 +357,11 @@ class FullExtentTest {
     }
   }
 
-  private fun runCase(density: Density, builder: ShadowBitmapBuilder, c: Case): Outcome {
-    val size =
-      with(density) { Size(c.widthDp.dp.roundToPx().toFloat(), c.heightDp.dp.roundToPx().toFloat()) }
+  private fun runCase(density: Density, builder: ShadowBitmapBuilder, c: Case, target: ShadowBitmaps = ShadowBitmaps()): Outcome {
+    val size = c.size(density)
     val radius = with(density) { c.radiusDp.dp.toPx() }
     val spread = with(density) { c.spreadDp.dp.toPx() }
     val outline = c.shape.shape.createOutline(size, LayoutDirection.Ltr, density)
-    val target = ShadowBitmaps()
     builder.build(target, outline, size, radius, spread, full = true)
     val bmp = target.bitmap!!
     val w = bmp.width
@@ -623,6 +686,8 @@ class FullExtentTest {
     const val SWITCH_SUMMARY_NAME = "full-extent-switch-summary.txt"
     const val SMALL_CSV_NAME = "full-extent-smallblur.csv"
     const val SMALL_SUMMARY_NAME = "full-extent-smallblur-summary.txt"
+    const val MASKGAPS_CSV_NAME = "full-extent-maskgaps.csv"
+    const val MASKGAPS_SUMMARY_NAME = "full-extent-maskgaps-summary.txt"
     const val HEADER =
       "model,api,shape,widthDp,heightDp,radiusDp,spreadDp,route,w,h,originX,originY,composeW,composeH,pixelRatio," +
         "identical,maxDiff,diffPixels,extraNonZeroA,outsideNonZeroB,ringNonZero,insideComposeMax,insideComposePixels"

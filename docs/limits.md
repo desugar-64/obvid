@@ -8,7 +8,13 @@ log warning).
 ## Some cases use the Skia of the device
 
 As in Compose: rects and rect-shaped paths, radius 0, and inner shadows of paths with a positive spread at some offsets.
-These cases agree with the Compose output of that device and are only slightly faster.
+Also some rare paths, for which the Skia of the device forms the mask in its own way: paths with an inverse fill type,
+drop shadows with a spread of 0.5 px or less (Skia draws the spread as a hairline), and drop shadows of a straight line
+with a spread (the spread is a rect). These cases agree with the Compose output of that device and are only slightly
+faster.
+
+An inverse fill covers the whole canvas, so `ShadowExtent.Full` does not apply to it: its shadow keeps the bitmap of
+Compose.
 
 ## Compose's hard edge stays by default
 

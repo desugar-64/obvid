@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -76,6 +77,8 @@ import org.junit.runner.RunWith
  *   ([FrameRouteModel] at spread ≤ 0); plus Java allocations per rebuild of a frame while its outline is kept.
  * - [smallBlurMatchesCompose]: blur radii under 2.6 px (σ < 2, Skia's small blur) on paths, round rects and frames
  *   (holes around Skia's frame nine-patch threshold included), the route asserted.
+ * - [maskRouteGapsMatchCompose]: paths with an inverse fill ([MaskRouteGapCases]), whose mask Skia forms over the
+ *   whole clip (the Skia route at spread ≤ 0), with Skia's decision per case, the route and no bands asserted.
  * - [pathSpreadOffsetsMatchCompose]: paths with spread > 0 and radius > 0 (the mask route: Compose's intermediate placed
  *   by the newest Skia's rule, then Obvid's blur) at offsets for every placement ([placement]: clipped out, sprite,
  *   filtered, filtered with an empty cut rect): whole pixels, around the 1/32 px sprite tolerance, halves, quarters,
@@ -359,6 +362,84 @@ class InnerShadowBuilderTest {
         assertTrue("route of ${row.case.key}: ${row.o.route}", row.o.route in SmallBlurCases.ROUND_ROUTES)
       }
     }
+  }
+
+  /**
+   * Inverse fills ([MaskRouteGapCases.inverseShapes]: a triangle and a curved star under `InverseWinding` and
+   * `InverseEvenOdd`) on a [MaskRouteGapCases.BOX_DP] box × radius 1 px / 4 dp / 24 dp × spread 0 / 8 / −8 dp ×
+   * offsets zero / 4 dp, plus [MaskRouteGapCases.inverseRectShape] at radius 1 px, spread 0.5 px, offset zero (a hole
+   * large enough for bands), fresh builders. Skia forms an inverse fill's mask over the whole clip; with spread > 0 the blur
+   * source is Compose's intermediate instead ([MaskRouteGapCases.predictInner]). Every case is asserted identical on the
+   * target Skia and on its route ([MaskRouteGapCases.expectedInnerRoute]: the Skia route at spread ≤ 0, the mask route
+   * with spread), with one failure listing the counts; the generation id as in [builderMatchesCompose]; and no bands
+   * ([ShadowBitmaps.hasBands]: an inverse fill covers the whole clip, past any band). Output (subdir [RESULTS_DIR]):
+   * `inner1-builder-maskgaps.csv` (the columns of `inner1-builder.csv` after the group, Skia's decision, its rule and
+   * the expected route, then whether the build set bands) and `inner1-builder-maskgaps-summary.txt`.
+   */
+  @Test
+  fun maskRouteGapsMatchCompose() {
+    val start = SystemClock.elapsedRealtime()
+    val offsets = MAIN_OFFSETS.filter { it.first in setOf("zero", "dp4") }
+    class GapCase(val case: Case, val radiusLabel: String, val spreadLabel: String)
+    val cases = buildList {
+      for (shape in MaskRouteGapCases.inverseShapes()) for ((rl, r) in MaskRouteGapCases.radii(density.density)) {
+        for (s in MaskRouteGapCases.INVERSE_SPREADS_DP) {
+          val g = Geometry(MaskRouteGapCases.BOX_DP, MaskRouteGapCases.BOX_DP, r, s)
+          for ((offset, at) in offsets) {
+            val (ox, oy) = at(g)
+            add(GapCase(Case(shape, g, offset, ox, oy), rl, "dp${fmt(s)}"))
+          }
+        }
+      }
+      // A convex inverse fill whose spread intermediate leaves a large hole: no bands all the same.
+      val d = density.density
+      val g = Geometry(MaskRouteGapCases.BOX_DP, MaskRouteGapCases.BOX_DP, MaskRouteGapCases.dpOf(1f, d), MaskRouteGapCases.dpOf(0.5f, d))
+      add(GapCase(Case(MaskRouteGapCases.inverseRectShape(), g, "zero", 0f, 0f), "px1", "px0.5"))
+    }
+    class GapRow(val csv: String, val row: Row, val result: MaskRouteGapCases.Result, val bands: Boolean)
+    val rows =
+      cases.mapIndexed { i, gc ->
+        val c = gc.case
+        val path = (outline(c) as Outline.Generic).path.asAndroidPath()
+        val prediction = MaskRouteGapCases.predictInner(path, c.g.radius, c.g.spread)
+        val expectedRoute = MaskRouteGapCases.expectedInnerRoute(path, c.g.spread)
+        val target = ShadowBitmaps()
+        val row = ShadowBitmapBuilder().use { b -> Row("maskgaps", i, c, measure(b, target, c, false)) }
+        val result =
+          MaskRouteGapCases.Result(
+            MaskRouteGapCases.INVERSE,
+            gc.radiusLabel,
+            gc.spreadLabel,
+            prediction.gap != null,
+            row.o.route,
+            row.o.identical,
+            row.o.diff.max,
+            row.o.diff.pixels,
+            expectedRoute,
+          )
+        val prefix = "${MaskRouteGapCases.INVERSE},${prediction.gap ?: ""},${prediction.rule},$expectedRoute"
+        GapRow("$prefix,${row.csv()},${bit(target.hasBands)}", row, result, target.hasBands)
+      }
+    val seconds = (SystemClock.elapsedRealtime() - start) / 1000.0
+    val results = rows.map { it.result }
+    val summary = ArrayList<String>()
+    summary += MaskRouteGapCases.summary(results)
+    for ((offset, group) in rows.groupBy { it.row.case.offset }) {
+      summary += "  offset $offset: identical ${group.count { it.row.o.identical }} / ${group.size}; routes ${routeCounts(group.map { it.row })}"
+    }
+    summary += "generation id unchanged ${rows.count { !it.row.o.genChanged }}, bands set ${rows.count { it.bands }}"
+    summary += footer(seconds)
+    summary += offTargetLines(listOf("maskgaps" to rows.map { it.row }))
+    summary.forEach { Log.i(TAG, it) }
+    rows.filter { !it.row.o.identical }.take(MAX_LOGGED_ROWS).forEach { Log.i(TAG, it.csv) }
+    writeResults(context, "$GAPS_NAME.csv", listOf("gap,predictedGap,skiaRule,expectedRoute,$HEADER,hasBands") + rows.map { it.csv }, RESULTS_DIR)
+    writeResults(context, "$GAPS_NAME-summary.txt", summary, RESULTS_DIR)
+
+    for (r in rows) {
+      assertTrue("generation id unchanged: ${r.csv}", r.row.o.genChanged)
+      assertTrue("bands for an inverse fill: ${r.csv}", !r.bands)
+    }
+    MaskRouteGapCases.failure(results, "$GAPS_NAME.csv", TargetSkia.isDevice)?.let { throw AssertionError(it) }
   }
 
   @Test
@@ -1073,6 +1154,7 @@ class InnerShadowBuilderTest {
     const val FIRST_MISMATCHES = 5
     const val MAX_LOGGED_ROWS = 50
     const val SIGMA_SCALE = 0.57735f
+    const val GAPS_NAME = "inner1-builder-maskgaps"
     const val HEADER =
       "model,api,phase,index,shape,widthDp,heightDp,widthPx,heightPx,radiusDp,radiusPx,border,spreadDp,spreadPx," +
         "offset,offsetX,offsetY,route,bitmapW,bitmapH,identical,maxDiff,diffPixels,genChanged,previousUntouched"
