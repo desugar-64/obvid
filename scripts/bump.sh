@@ -9,7 +9,8 @@
 # If any step fails, the three files are restored.
 #
 # Usage: scripts/bump.sh patch|minor|major
-#   Under 1.0, a change that breaks the public API is a minor bump; otherwise a patch.
+#   Under 1.0, a change that breaks the public API is a minor bump; otherwise a patch. The script refuses a bump
+#   smaller than the API change since the release needs (scripts/api_bump.sh).
 set -euo pipefail
 
 part=${1:-}
@@ -41,6 +42,14 @@ esac
 [ "$major" -lt 100 ] && [ "$minor" -lt 100 ] && [ "$patch" -lt 100 ] ||
   fail "$major.$minor.$patch: each part must stay below 100 (the demo's versionCode); bump the next part instead"
 next="$major.$minor.$patch"
+
+# The public API change since the release needs at least this bump (scripts/api_bump.sh prints the diff).
+if [ -n "$newest" ]; then
+  need=$(scripts/api_bump.sh "$newest") || exit 1
+  rank() { case "$1" in patch) echo 0 ;; minor) echo 1 ;; major) echo 2 ;; esac; }
+  [ "$(rank "$part")" -ge "$(rank "$need")" ] ||
+    fail "the public API change since $newest (diff above) needs a $need bump: scripts/bump.sh $need"
+fi
 
 grep -qx '## Unreleased' CHANGELOG.md || fail "CHANGELOG.md has no '## Unreleased' heading (exactly that line)"
 scripts/changelog.sh Unreleased > /dev/null 2>&1 ||
