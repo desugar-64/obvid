@@ -1,4 +1,4 @@
-# Publishes a release for a tag `v<version>` (the version in obvid/build.gradle.kts):
+# Publishes a release for a tag `v<version>` (`obvid.version` in gradle.properties):
 # - the Maven artifacts into the gh-pages branch under maven/ (earlier versions are kept; an existing version is
 #   never overwritten), served at https://desugar-64.github.io/obvid/maven;
 # - a GitHub Release with the signed demo APK and the library's native debug symbols. Its text is the version's section
@@ -7,9 +7,7 @@
 # gh-pages, and last the draft is published. A failure before the gh-pages push leaves nothing public, and a new run
 # replaces the draft. A failure after it leaves a complete draft to publish by hand; a new run says so.
 #
-# The job runs in the `release` environment. Configure it in Settings > Environments with required reviewers, so that
-# every release waits for a manual approval. The signing secrets are repository secrets (Settings > Secrets and
-# variables > Actions) or secrets of that environment:
+# The signing secrets (repository secrets, or secrets of the `release` environment):
 #   SIGNING_KEYSTORE_BASE64  the demo app's keystore, base64-encoded
 #   SIGNING_KEYSTORE_PASSWORD, SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
 # GitHub Pages must serve the gh-pages branch (Settings > Pages).
@@ -29,17 +27,29 @@ jobs:
     environment: release
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v7
-      - name: Check that the tag matches the library version
+      # The tag is v<version>, the version is not older than any release, and it has its changelog and README lines.
+      - name: Check the version
         id: version
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' obvid/build.gradle.kts)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $version in obvid/build.gradle.kts" >&2
-            exit 1
-          fi
+          version=$(scripts/version.sh --tag "$GITHUB_REF_NAME")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # As scripts/release.sh checks before it pushes the tag: the tagged commit is on main, and CI passed on it.
+      - name: Check that the tag is on main and passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+          case "$on_main" in
+            identical | behind) ;;
+            *) echo "The tagged commit ${GITHUB_SHA::7} is not on main ($on_main)" >&2; exit 1 ;;
+          esac
+          ci=$(gh run list --workflow ci.yml --branch main --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json status,conclusion \
+            --jq '.[0] | "\(.status) \(.conclusion)"')
+          [ "$ci" = "completed success" ] || { echo "CI on ${GITHUB_SHA::7}: ${ci:-no run}" >&2; exit 1; }
       - name: Take the release notes from CHANGELOG.md
         run: scripts/changelog.sh "${{ steps.version.outputs.version }}" > "$RUNNER_TEMP/release-notes.md"
       - uses: actions/setup-java@v6
@@ -128,6 +138,14 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          # The build used the checked version: Gradle could take obvid.version from elsewhere (-P, the environment).
+          # The Maven repository starts from gh-pages, which has no $VERSION yet (checked above): only this build
+          # can have written it.
+          aar="obvid/build/maven-repo/dev/serhiiyaremych/obvid/$VERSION/obvid-$VERSION.aar"
+          [ -f "$aar" ] || { echo "The build published no $aar" >&2; exit 1; }
+          aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$aapt2" dump badging sample/build/outputs/apk/release/sample-release.apk | grep -qF "versionName='$VERSION'" ||
+            { echo "The demo APK is not version $VERSION" >&2; exit 1; }
           mkdir release-files
           cp sample/build/outputs/apk/release/sample-release.apk "release-files/obvid-demo-$VERSION.apk"
           (cd obvid/build/outputs/native-debug-symbols && zip -r "$GITHUB_WORKSPACE/release-files/obvid-$VERSION-native-debug-symbols.zip" .)

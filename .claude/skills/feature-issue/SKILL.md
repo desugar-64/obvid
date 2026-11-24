@@ -57,7 +57,9 @@ changes) goes at the end of What and why.
 The repo is public. Issues are read by people who know nothing of the working notes:
 - No references to local files that are not in the repo (working docs, `results/`, plans, traces), no device serials,
   no local paths. Quote the numbers themselves.
-- Plain short sentences, the README's vocabulary. Never write "byte-identical"; write "identical".
+- Write in ASD-STE100 Simplified Technical English (STE): one topic per sentence, at most 20 words in an
+  instruction and 25 in a description, active voice, one instruction per sentence, one meaning per word, the README's
+  vocabulary. Short lists, not walls of text. Never write "byte-identical"; write "identical".
 - Code links: `https://github.com/desugar-64/obvid/blob/<full SHA>/<path>#L<a>-L<b>`, the SHA being `origin/main`.
 
 ## Filing
@@ -77,7 +79,8 @@ Several issues at once: draft them all, get one approval for the set, file them 
   an issue comment, AI line first.
 - Branch from an up-to-date `main`: `<issue number>-<short-slug>`, e.g. `12-neon-small-blur`.
 - Commit only when the user asks. Commit subjects in the repo's style (`scope: what changed`).
-- If the feature changes what users get, add the entry to `CHANGELOG.md` with a link to the issue.
+- If the feature changes what users get, add its line under `## Unreleased` in `CHANGELOG.md`, with a link to the
+  issue. Never edit the version: that is the `release` skill's job.
 
 ## Pull request
 

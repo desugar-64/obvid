@@ -1,6 +1,6 @@
 # To do
 
-Ideas that were measured or scoped, but are not in 0.1.1.
+Ideas that were measured or scoped, but are not in Obvid yet.
 
 ## Parallel builds when a screen opens
 
