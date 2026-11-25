@@ -3,8 +3,6 @@
 
 package dev.serhiiyaremych.obvid.sample.app
 
-import android.app.Application
-import android.content.ComponentCallbacks2
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -70,10 +68,10 @@ import dev.serhiiyaremych.obvid.sample.readParallelBuildsSetting
  * the page color fading out past its edge. The scenes are padded clear of the chrome by [DemoPadding], measured as the
  * chrome lays out.
  *
- * A switch or the toggle rebuilds the tab's scene and the Feed's header and chips ([key]); the toggle also drops
- * Obvid's idle shadows (a trim; between implementations nothing is shared to drop). Every shadow modifier node is
- * created anew with empty caches, as on the first frame an app using that implementation draws, so the comparison
- * starts cold each time instead of carrying one implementation's warm state into the other. What the user did in a tab
+ * A switch or the toggle rebuilds the tab's scene and the Feed's header and chips ([key]), so every shadow modifier
+ * node is created anew and reads the implementation and the build mode when it attaches. Obvid's shadows still in its
+ * idle cache come back without a build, so the toggled mode applies to shadows first built after it (new cards, an
+ * opened card); a cold start in a mode needs the setting and a new process. What the user did in a tab
  * (feed position, bookmarks, open card, camera) lives above the rebuild and survives it, as do the tab, the
  * implementation and the HUD across configuration changes. The Feed's header, chips and the bottom bar step aside while
  * a feed card is open.
@@ -112,12 +110,7 @@ fun DemoApp(initialImpl: ShadowImpl, initialHud: Boolean) {
               impl,
               { impl = it },
               builds,
-              {
-                // Cold, as a switch of implementation: the shadows of the scene rebuilt below would otherwise come
-                // from Obvid's idle cache (dropped, like Compose's shadow cache, at this trim level).
-                (context.applicationContext as Application).onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_BACKGROUND)
-                builds = it
-              },
+              { builds = it },
               hud,
               { hud = it },
               feed,
