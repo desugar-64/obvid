@@ -21,14 +21,8 @@ internal class NineRectsRoute(
   private val framePath = android.graphics.Path()
 
   /**
-   * Skia's frame nine-patch (`filterRectsToNine` with two rects, then `draw_nine` without the centre) of [nested]'s
-   * outer and inner rect for a nine-patch [plan]: the small frame `smallR0 = (o.l, o.t, o.r − dx, o.b − dy)` minus
-   * `smallR1` (the inner rect likewise), even-odd, anti-aliased, no mask filter, is drawn into the mask bitmap's
-   * `roundOut(smallR0)` window under the translate `(−floor(o.l), −floor(o.t))`, as `draw_rects_into_mask` draws it (two contours of
-   * `addRect`'s clockwise points from the top-left, `(l, t) (r, t) (r, b) (l, b)`, written as move, three lines and
-   * close: an `addRect` path would take the platform's rect-region shortcut on API 23–33, see
-   * [MaskRoute.setDropPath]; the same float translate, the mask rect as clip), then blurred and stretched into [target]
-   * natively (`ObvidNative.builderNineRects`). With [inverted] (an inner shadow) every value v is written as `255 − v`.
+   * Draws the small frame of [nested]'s rects for [plan] into the mask, then blurs and stretches it into [target]
+   * without its centre. With [inverted] (an inner shadow) writes `255 − v`.
    */
   fun build(target: Bitmap, w: Int, h: Int, radius: Float, plan: Long, inverted: Boolean) {
     traceSection(TRACE_NINE_PATCH) {

@@ -6,10 +6,7 @@ package dev.serhiiyaremych.obvid.builder
 import android.graphics.RectF
 import androidx.compose.ui.graphics.asComposePath
 
-/**
- * The drop shadow's spread stroke of a path: Compose's second draw, the path stroked `2·spread` wide, built in local
- * space once per build ([build]; its bounds may be needed before the route is decided).
- */
+/** The drop shadow's spread stroke: the path stroked `2·spread` wide in local space, built once per build. */
 internal class SpreadStroke {
   private val paint =
     android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -41,12 +38,7 @@ internal class SpreadStroke {
     ready = true
   }
 
-  /**
-   * The local bounds of Compose's path draw into [out]: the path's, united with its `2·spread` stroke's for a
-   * positive spread (the stroke is kept in [path] for the mask route). A stroke Skia draws as a hairline
-   * ([hairlineSpread]) reaches pixels up to 1 px from the path instead (Skia draws it into a mask of the path's bounds
-   * outset by ½, rounded out): the path's bounds outset by 1.
-   */
+  /** The local bounds of Compose's path draw into [out]: the path's, with its spread stroke's for spread > 0. */
   fun drawBounds(local: android.graphics.Path, spread: Float, out: RectF) {
     @Suppress("DEPRECATION") local.computeBounds(out, true)
     if (hairlineSpread(spread)) {

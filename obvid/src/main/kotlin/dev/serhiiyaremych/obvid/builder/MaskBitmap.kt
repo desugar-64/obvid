@@ -6,11 +6,7 @@ package dev.serhiiyaremych.obvid.builder
 import android.graphics.Bitmap
 import kotlin.math.max
 
-/**
- * The reused A8 bitmap a route draws its unblurred mask into before the native blur reads it (the mask route, the
- * round-rect nine-patch and the frame nine-patch), with its canvas and the mask's paint (opaque black fill,
- * anti-aliased, no mask filter). It never leaves the builder.
- */
+/** The reused A8 bitmap a route draws its mask into before the native blur, with its canvas and paint. */
 internal class MaskBitmap {
   private var bitmap: Bitmap? = null
 

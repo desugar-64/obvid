@@ -6,10 +6,7 @@ package dev.serhiiyaremych.obvid.builder
 import android.graphics.Bitmap
 import dev.serhiiyaremych.obvid.ObvidNative
 
-/**
- * The native shadow builder (`ObvidNative.builderCreate`: the kernel scratch) and the values the routes ask of it per
- * radius, each kept for the last radius asked. Owned by one [ShadowBitmapBuilder], on its thread.
- */
+/** The native shadow builder handle and its per-radius values, kept for the last radius. */
 internal class NativeBuilder {
   /** The native handle; 0 after [close]. */
   var handle: Long = ObvidNative.builderCreate()
@@ -51,10 +48,7 @@ internal class NativeBuilder {
     return skiaMargin
   }
 
-  /**
-   * `255 − v` over the whole bitmap (it is exactly the used size): the opaque `Xor` rect Compose draws last. Returns
-   * the packed hole of the result grown from ([seedX], [seedY]) (0: none).
-   */
+  /** Inverts [target] to `255 − v`; returns the packed hole found from ([seedX], [seedY]) (0: none). */
   fun invertWithHole(target: Bitmap, w: Int, h: Int, seedX: Int, seedY: Int): Long {
     val hole = ObvidNative.builderInvertHole(handle, target, w, h, seedX, seedY)
     check(hole >= 0L) { "builderInvertHole failed: $hole" }

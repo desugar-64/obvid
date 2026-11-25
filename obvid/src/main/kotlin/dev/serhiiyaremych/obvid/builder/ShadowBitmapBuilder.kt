@@ -13,7 +13,6 @@ import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import dev.serhiiyaremych.obvid.NineMaskCache
-import dev.serhiiyaremych.obvid.NineMaskKey
 import dev.serhiiyaremych.obvid.ObvidNative
 import dev.serhiiyaremych.obvid.ShadowExtent
 import dev.serhiiyaremych.obvid.ShadowPrefetch
@@ -24,102 +23,30 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Builds the A8 drop-shadow bitmap of Compose 1.13.0's `DropShadowRenderer.createOuterShadowBitmap` into a
- * [ShadowBitmaps]: after [build], its bitmap is identical to the bitmap Compose allocates on Android 16–17's
- * Skia. On older Android the blur and the round-rect nine-patch keep that Skia's output rather than the device's; the
- * masks are still rasterized by the device's `Canvas`, and [Route.Skia] draws with the device's Skia.
+ * Builds the A8 bitmaps of Compose's drop shadow ([build]) and inner shadow ([buildInner]) into a [ShadowBitmaps], with
+ * the same pixels as Compose on Android 16–17. Each build picks a [Route]; a build that fits allocates nothing. An inner
+ * build writes B, the blurred shape, then inverts it to `255 − B`.
  *
- * Routes, as Compose's `updateParamsFromOutline` and Skia's CPU routing split them:
- * - [Route.Mask]: `Outline.Generic` and non-simple `Outline.Rounded` with radius > 0, unless the path moved by
- *   Compose's translate is a rect (`Path.isRect`; Skia blurs a rect path with its analytic `BlurRect`) or may be
- *   nested rects ([ShadowBitmaps.nestedRects]; Skia's rect nine-patch, also with spread: the fill draw; canonical
- *   frames are decided exactly, below), or is a path whose mask Skia forms otherwise ([MaskRoute.setDropPath]: an inverse fill, a
- *   spread stroke Skia draws as a hairline, a spread stroke that may be rects). The outline is
- *   drawn without a mask filter into a reused A8 mask bitmap at Skia's mask bounds (`compute_mask_bounds`), blurred by
- *   the NEON kernel and written into the bitmap at (mask origin − border) (`ObvidNative.builderBlur`). Path +
- *   spread: the fill and the `2·spread` stroke are separate masks, the stroke composited source-over.
- * - [Route.Skia]: `Outline.Rectangle`, a rect path, nested rects (except the frames below), the paths [MaskRoute.setDropPath]
- *   leaves to Skia, simple `Outline.Rounded` where Skia's decision is not Obvid's, and any outline at radius ≤ 0
- *   (Compose then sets no mask filter): Compose's own draw calls with its `Paint` configuration.
- * - A canonical frame ([ShadowBitmaps.isFrame]: two `addRect`-shaped contours) with radius > 0 and spread ≤ 0, by
- *   Skia's nested-rects test on its points moved by the translate ([NestedRects.test]) and then Android 17's
- *   `filterRectsToNine` (`ObvidNative.builderPlanRects`):
- *   - [Route.NineRects]: Skia's frame nine-patch. The small frame is drawn into the mask bitmap, blurred by Obvid's
- *     kernel and stretched into the bitmap without its centre ([NineRectsRoute.build]).
- *   - [Route.Mask]: Skia returns unimplemented (a hole too small for the blur, a rect over 32767), or the two rects
- *     are not nested; Skia blurs the whole mask of the path.
- *   - The Skia route when Skia does not blur; a frame whose points fail the test goes the way of any other path.
- *   With spread > 0 the fill and the stroke are two draws: the Skia route, as for other nested rects.
- * - Simple `Outline.Rounded` (incl. `CircleShape`) with radius > 0 and both corner radii > 0, by the decision of
- *   Android 16–17's Skia for Compose's `drawRoundRect` (`ObvidNative.builderPlanRoundRect`, that Skia's
- *   `filterRRectToNine`), on every API level:
- *   - [Route.NinePatch]: Skia's nine-patch. The small round rect `(0, 0, w, h)` (whole pixels) is drawn into the mask
- *     bitmap at the origin, blurred by Obvid's kernel and stretched into the bitmap (`ObvidNative.builderNine`). The
- *     blurred small round rect depends only on the plan's small rect, the corner radii and the radius ([NineMaskKey]),
- *     not on the rect's position or size, the spread or the inner shadow's offset, so a build whose key is kept only
- *     stretches the kept one again (`builderNinePlace`), as Skia's nine-patch cache does for Compose. Kept in two
- *     places ([NinePatchRoute.build]): published in [nineMasks] by a target's first build (shared by every target of the cache,
- *     drop and inner, never rewritten), and in the target's private buffer ([ShadowBitmaps.keptNineMask]) by a
- *     rebuild that finds neither (an animation: rewritten in place by its next miss, never published).
- *   - [Route.MaskRoundRect]: nothing to stretch, or an oval (`CircleShape` without spread); Skia blurs the whole mask
- *     of `SkPath::RRect(rrect)` or `SkPath::Oval(rect)`. The mask route with the shape drawn by the mask canvas's
- *     `drawRoundRect`, which builds that same path from the same floats.
- *   - Otherwise (a rect after `setRectXY`, or over Skia's limits): the Skia route.
- *   Spread adds no stroke here: Compose's round-rect overload draws the rect grown by spread.
- *
- * The build context (native handle with the kernel scratch, mask bitmap, canvases, paints, paths) is shared by every
- * shadow built with this builder, held by one part per route ([MaskRoute], [NinePatchRoute], [NineRectsRoute],
- * [InnerPathSpread], [SkiaRoute]) and the parts they share ([NativeBuilder], [MaskBitmap], [DropArea], [SpreadStroke],
- * [NestedRects]); this class decides the route; a [build] that fits allocates nothing (except a `BlurMaskFilter` when the Skia
- * route's radius changes, a published nine-patch mask for a node's first build of a new key, and the target's private
- * one when it first rebuilds off the cache or must grow). The first write of a build replaces the whole bitmap
- * (replace mode of the first mask, or a `CLEAR` on the Skia route), so a reconfigured bitmap's stale bytes never show.
- *
- * HWUI: the bitmap's generation id (the key of HWUI's texture cache) changes on every [build]: the native unlock calls
- * `notifyPixelsChanged` (API 23+), and Skia's raster draws bump it themselves (`SkBitmapDevice` takes the pixels with
- * `accessPixels`, which notifies; API 23–25 through `accessBitmap(true)`).
- *
- * [buildInner] builds Compose's inner-shadow bitmap (`InnerShadowRenderer.buildShadow`) with the same routes. Every
- * inner build is "255 − B": B is what the blurred draw of the shape (inset by the spread for a round rect, moved by
- * the offset) leaves in an empty bitmap, and Compose's opaque `Xor` rect over A8 is exactly `255 − d`. The native
- * routes write B (clipped to the bitmap: the moved shape may lie partly or wholly outside it), then invert the bitmap
- * (`ObvidNative.builderInvertHole`); the nine-patch routes write `255 − B` in the same pass instead
- * (`builderNineInvertedHole`, `builderNineKeepInvertedHole`, `builderNinePlaceInvertedHole`, `builderNineRects`).
- * Except the frame's nine-patch, each also returns the bitmap's hole (a rect of 0s), from which the build sets the
- * bands of the final draw ([ShadowBitmaps.setBands]) unless the outline is a concave path or an inverse fill:
- * - [Route.Mask]: a path (`Outline.Generic`, non-simple `Outline.Rounded`) with radius > 0 and spread ≤ 0 (Compose
- *   ignores a negative spread there), moved by the offset, unless it is a rect (`Path.isRect`; Skia blurs a rect path
- *   with its analytic `BlurRect`), may be nested rects ([ShadowBitmaps.nestedRects]; Skia's rect nine-patch) or is an
- *   inverse fill (Skia's mask is the whole clip, [MaskRoute.setInnerPath]). Also a
- *   path, nested rects included, with spread > 0 and radius > 0: Compose's intermediate (the path eroded
- *   by a `Clear` stroke) is rasterized by Compose's own calls, and the mask Skia blurs for `drawImage` of it is formed
- *   by the newest Skia's placement rule ([InnerPathSpread]), unless Skia's rect-to-rect matrix for that
- *   `drawImage` scales (an offset whose float sum with the intermediate's size is inexact): then the Skia route.
- * - [Route.NinePatch] / [Route.MaskRoundRect]: a simple `Outline.Rounded` with both corner radii > 0 and radius > 0,
- *   by the same decision as the drop shadow's for Compose's inner `drawRoundRect` (the rect inset by the spread and
- *   moved by the offset, corner radii unchanged).
- * - [Route.NineRects] / [Route.Mask] / [Route.Skia] for a canonical frame with radius > 0 and spread ≤ 0, by the same
- *   decision as the drop shadow's, for the frame moved by the offset.
- * - [Route.Skia]: everything else (rects and zero corner radii, radius ≤ 0, an empty inset rect, Skia's own
- *   decisions): Compose's own calls on the reused, cleared bitmap, through a [Paint] reset to a fresh one's state per
- *   build (Compose's renderer builds once with a new `Paint`).
- *
- * A path with spread > 0 rasterizes Compose's intermediate into a reused A8 bitmap of exactly its size on either
- * route, before the shadow bitmap is prepared (Compose's order).
- *
- * Not thread-safe (one builder per [ShadowStore], used on that store's thread). [close] frees the native handle, the
- * mask, the intermediate and the buffer the intermediate is placed in; the published nine-patch masks are [nineMasks]'
- * (the store's for a store's builder, which outlives its builders; a builder's own otherwise, which keeps nothing).
+ * Not thread-safe: one builder per [ShadowStore]. [close] frees the native handle and the reused bitmaps.
  */
 internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) : AutoCloseable {
   /** The published masks the next builds use; a worker's builder takes each job's own ([ShadowPrefetch.masks]). */
   var nineMasks: NineMaskCache = nineMasks
 
   enum class Route {
+    /** A path drawn into a mask and blurred natively ([MaskRoute]). */
     Mask,
+
+    /** Compose's own draw calls ([SkiaRoute]). */
     Skia,
+
+    /** A simple round rect blurred small and stretched ([NinePatchRoute]). */
     NinePatch,
+
+    /** A simple round rect drawn whole into a mask and blurred natively ([MaskRoute]). */
     MaskRoundRect,
+
+    /** A frame of two nested rects blurred small and stretched ([NineRectsRoute]). */
     NineRects,
   }
 
@@ -138,8 +65,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   // A simple round rect's device rect on Obvid's routes, as Compose's `drawRoundRect` gives it (not sorted).
   private val roundRect = RectF()
 
-  // [NinePatchRoute.build]: whether this build's first build of a target may publish its mask (the current build's
-  // argument).
+  // Whether the current build may publish its nine-patch mask.
   private var mayPublish = true
 
   private val area = DropArea()
@@ -153,20 +79,10 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   private val skia = SkiaRoute(bounds)
 
   /**
-   * Rebuilds [target]'s shadow of [outline] (created for the layout [size]) with [radius] and [spread] in px, as
-   * Compose computes them (`shadow.radius.toPx()`, `shadow.spread.toPx()`). With [preserveCurrent] the current bitmap
-   * is left untouched and the shadow is written into the other buffer, which becomes current. A build off the
-   * nine-patch route frees [target]'s private small round rect. Without [mayPublish] a first build into [target]
-   * publishes no nine-patch mask ([NinePatchRoute.build]).
-   *
-   * With [full] ([ShadowExtent.Full]) the bitmap is the full-extent area instead of Compose's: Compose's draw calls on
-   * a larger canvas, translated by whole pixels ([ShadowBitmaps.origin]: where the bitmap
-   * starts in Compose's), cropped to the shape drawn (the outline grown by the spread, as Compose draws it) grown by
-   * the margin past which the blur is 0: [ObvidNative.builderFullMargin] on Obvid's routes, the device Skia's reach
-   * ([ObvidNative.builderSkiaReachMargin]) on [Route.Skia]. Every route decides and draws on that canvas's device
-   * coordinates, as Skia would. A shape reaching past its layout bounds is kept up to that margin past Compose's area
-   * (the bitmap is at most Compose's grown by the margin on each side). An inverse fill keeps Compose's area: it
-   * covers the whole canvas, so no area holds all of its shadow.
+   * Rebuilds [target]'s drop shadow of [outline] for the layout [size], with [radius] and [spread] in px. With
+   * [preserveCurrent] the shadow goes into the other buffer, which becomes current. Without [mayPublish] the build
+   * publishes no nine-patch mask. With [full] ([ShadowExtent.Full]) the bitmap holds the whole shadow, not only
+   * Compose's area.
    */
   fun build(
     target: ShadowBitmaps,
@@ -200,13 +116,10 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   ) {
     target.setOutline(outline)
     val path = target.path
-    // An inverse fill covers the whole canvas Compose draws on, however large: no area holds all of its shadow, so it
-    // keeps Compose's (the same bitmap as without the full extent).
+    // An inverse fill keeps Compose's area.
     val full = fullExtent && !(path != null && path.asAndroidPath().isInverseFillType)
 
-    // DropShadowRenderer.createOuterShadowBitmap: the bitmap size. Compose's ImageBitmap throws
-    // IllegalArgumentException for an empty one (a negative spread can make it empty); so does this, also for the full
-    // extent.
+    // Compose's bitmap size; an empty bitmap throws, as in Compose.
     val outset = radius * 2 + spread * 2
     val shadowWidth = size.width + outset
     val shadowHeight = size.height + outset
@@ -242,12 +155,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     }
   }
 
-  /**
-   * The drop shadow of [local] (radius > 0) on Obvid's routes, drawn under Compose's translate [t]; sets the route and
-   * returns true when one takes it. A canonical frame without spread (one fill draw) is decided by Skia's nested-rects
-   * test on the moved points; any other path that may be nested rects is left to Skia, which blurs the fill draw with
-   * its rect nine-patch.
-   */
+  /** The drop shadow of [local] on Obvid's routes, under Compose's translate [t]; true when one takes it. */
   private fun buildPath(
     target: ShadowBitmaps,
     local: android.graphics.Path,
@@ -308,16 +216,13 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   }
 
   /**
-   * Builds a simple round rect (radius > 0) the way Android 16–17's Skia would, if that Skia's decision for Compose's
-   * draw is one of Obvid's routes ([Route.NinePatch], [Route.MaskRoundRect]); sets [route] and returns true then. False
-   * leaves the build to the Skia route.
+   * The drop shadow of a simple round rect on [Route.NinePatch] or [Route.MaskRoundRect], when Skia's plan picks one;
+   * false otherwise.
    */
   private fun buildRoundRect(bitmaps: ShadowBitmaps, shadowWidth: Float, shadowHeight: Float, radius: Float): Boolean {
     val corner = bitmaps.cornerRadius
     if (!(corner.x > 0f && corner.y > 0f)) return false // drawRoundRect draws a rect
-    // createOuterShadowBitmap(size, radius, spread, cornerRadius): drawRoundRect with these floats, no translate; the
-    // full extent's canvas translate moves the device rect (`SkRRect::transform`: `mapRect`, each edge plus the
-    // translate).
+    // Compose's drawRoundRect rect, moved by the full extent's translate.
     if (area.full) {
       roundRectBounds(radius, shadowWidth, shadowHeight)
       area.setFull(bounds, 0f, native.fullMargin(radius))
@@ -337,22 +242,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
       ObvidNative.PLAN_SKIA -> Unit
       ObvidNative.PLAN_FULL_MASK -> {
         route = Route.MaskRoundRect
-        // Skia's fallback: drawPath(SkPath::RRect(rrect)) through filterPath, whose device bounds are the rect.
-        //
-        // An oval (CircleShape) is the same path call, by another way in. Compose's canvas: SkCanvas::drawRoundRect
-        // → setRectXY gives an oval → onDrawRRect sends `isOval()` to drawOval(rect) before any device call, so
-        // filterRRectToNine is never reached → SkBitmapDevice::drawOval → drawPath(SkPath::Oval(rect)) (Android 10:
-        // path.addOval(rect); 17: via skcpu::Draw::drawOval; the mask canvas makes the same call) → drawDevPath →
-        // filterPath: not a rect, so DrawToMask: mask bounds = (path bounds = rect) outset by ½, rounded out,
-        // clipped to the clip grown by min(m, 128) (blurMask's l, t, r, b), then draw_into_mask fills the path
-        // anti-aliased under translate(−l, −t) with the mask rect as clip (10–14: SkDraw::drawPath with that matrix;
-        // 17: mapPoints, then SkScan::AntiFillPath), then filterMask blurs it. Android 17's onDrawOval first asks
-        // canAttemptBlurredRRectDraw, which is null on a raster device (useDrawCoverageMaskForMaskFilters() is
-        // false), and then aboutToDraw adds no mask-filter layer for the same reason.
-        // The mask canvas, no mask filter: the same drawRoundRect floats → the same setRectXY oval → drawOval(rect)
-        // → drawPath(SkPath::Oval(rect)) with the CTM translate(−l, −t) → the path mapped by that translate →
-        // SkScan::AntiFillPath, clipped to (0, 0, mw, mh). Same contour, same float translate, same scan converter
-        // and clip, so the same coverage; blitted opaque black onto zero, it is the A8 mask Skia blurs.
+        // Skia blurs the whole round rect (or oval); the mask canvas draws the same shape.
         maskRoute.setRoundRect(roundRect, corner, radius)
         maskRoute.blurRoundRect(area.prepare(), w, h, radius)
       }
@@ -366,13 +256,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   }
 
   /**
-   * Rebuilds [target]'s inner shadow of [outline] (created for the layout [size]) with [radius], [spread] and the
-   * [offset] in px, as Compose computes them (`shadow.radius.toPx()`, …), into the bitmap
-   * Compose's `InnerShadowRenderer` allocates: `ceil(size)` per axis, grown by `ceil(radius)` on each side for a path
-   * (the content is not inset by it). With [preserveCurrent] the current bitmap is left untouched and the shadow is
-   * written into the other buffer, which becomes current. A build off the nine-patch route frees [target]'s private
-   * small round rect. Without [mayPublish] a first build into [target] publishes no nine-patch mask
-   * ([NinePatchRoute.build]).
+   * Rebuilds [target]'s inner shadow of [outline] for the layout [size], with [radius], [spread] and [offset] in px.
+   * [preserveCurrent] and [mayPublish] as in [build].
    */
   fun buildInner(
     target: ShadowBitmaps,
@@ -402,9 +287,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   ) {
     target.setOutline(outline)
     val path = target.path
-    // Compose rasterizes the path + spread intermediate before it allocates the shadow bitmap. Its ImageBitmap throws
-    // IllegalArgumentException for an empty bitmap (an empty path; a path's padding is negative for a negative
-    // radius); so does this, in the same order.
+    // The spread intermediate first, then the bitmap; an empty one throws, in Compose's order.
     val image = if (path != null && spread > 0f) skia.buildIntermediate(path, spread) else null
     val pad = if (path != null) ceil(radius).toInt() else 0
     val w = ceil(size.width).toInt() + pad * 2
@@ -423,10 +306,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     }
   }
 
-  /**
-   * The inner shadow (radius > 0) on Obvid's routes, B written into [bitmap] (inverted already by the nine-patch
-   * routes); sets the route and returns true when one takes it. [spreadImage]: the path + spread intermediate exists.
-   */
+  /** The inner shadow on Obvid's routes, written into [bitmap]; true when one takes it. */
   private fun buildInnerNative(
     target: ShadowBitmaps,
     path: Path?,
@@ -442,8 +322,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     when {
       path == null -> buildInnerRoundRect(target, bitmap, size, w, h, radius, spread, offset)
       spreadImage -> buildInnerPathSpread(bitmap, w, h, radius, offset)
-      // A canonical frame is decided by Skia's nested-rects test on the moved points; any other path that may be
-      // nested rects is left to Skia, which blurs the path draw with its rect nine-patch.
+      // A frame is decided on its moved points; another path that may be nested rects goes to Skia.
       else ->
         when (if (target.isFrame) nested.test(target.framePoints, offset) else NestedRects.Answer.Unknown) {
           NestedRects.Answer.Nested ->
@@ -457,10 +336,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         }
     }
 
-  /**
-   * After a native inner route: `255 − B` over [bitmap] unless the route wrote it inverted, then [target]'s bands from
-   * the bitmap's hole.
-   */
+  /** Inverts [bitmap] to `255 − B` unless the route did, then sets [target]'s bands from the bitmap's hole. */
   private fun invertAndBand(
     target: ShadowBitmaps,
     path: Path?,
@@ -470,10 +346,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     h: Int,
     offset: Offset,
   ) {
-    // The nine-patch routes have written the inverted bitmap themselves; the round rect's also returned its hole.
-    // The others' hole is grown from the component's centre moved by half the offset (the middle of the overlap of
-    // the shape and the shape moved by the offset, for a symmetric shape). The frame's nine-patch gives none: its
-    // 0s lie in the frame's band, not around a point known in advance.
+    // The nine-patch routes wrote the bitmap inverted; the frame's has no hole. The others search the hole from the
+    // centre moved by half the offset.
     val hole =
       when (route) {
         Route.NinePatch -> ninePatch.hole
@@ -483,11 +357,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
             bitmap, w, h, floor((size.width + offset.x) / 2f).toInt(), floor((size.height + offset.y) / 2f).toInt(),
           )
       }
-    // Bands only for an outline whose pixels do not depend on the clip it is drawn under: a rect, a round rect
-    // (analytic on the GPU) or a convex path (Ganesh's convex path renderer). A concave path's renderer is chosen
-    // by its clipped device bounds (an atlas for a small clipped path, a tessellation for a large one), whose
-    // anti-aliased edges differ by a few levels. An inverse fill (convex or not) covers the whole clip, past any
-    // band.
+    // Bands only for a round rect or a convex path that is not an inverse fill.
     if (hole > 0L && (path == null || (path.isConvex && !path.asAndroidPath().isInverseFillType))) {
       // A path may reach past the component: the bands must cover all of it.
       @Suppress("DEPRECATION") if (path != null) path.asAndroidPath().computeBounds(bounds, true)
@@ -514,9 +384,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   }
 
   /**
-   * `createInnerShadowBrush`'s `drawRoundRect` (radius > 0) on Obvid's pipeline when Android 16–17's Skia takes a route
-   * of Obvid's for it ([buildRoundRect]'s plan, for the inset, moved rect): writes B and sets the route. False leaves
-   * the build to the Skia route (a rect or zero corner radius, an empty inset rect, Skia's own decisions).
+   * The inner shadow of a simple round rect (inset by [spread], moved by [offset]) on [Route.NinePatch] or
+   * [Route.MaskRoundRect], when Skia's plan picks one; false otherwise.
    */
   private fun buildInnerRoundRect(
     bitmaps: ShadowBitmaps,
@@ -540,16 +409,12 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     when (plan) {
       ObvidNative.PLAN_SKIA -> Unit
       ObvidNative.PLAN_FULL_MASK -> {
-        // Skia's full mask of SkPath::RRect(rrect) or SkPath::Oval(rect), as in buildRoundRect; the mask bounds are
-        // clipped to the bitmap grown by min(border, 128), so a rect moved partly or wholly off the bitmap is cut the
-        // way Skia cuts it.
         route = Route.MaskRoundRect
         maskRoute.setRoundRect(roundRect, corner, radius)
         maskRoute.blurRoundRect(target, w, h, radius)
       }
       else -> {
-        // draw_nine clips each piece to the device clip (the bitmap): write_nine's clip to the used rect. Written
-        // inverted (255 − B), so buildInner skips its separate inversion for this route.
+        // Written inverted (255 − B).
         route = Route.NinePatch
         ninePatch.build(bitmaps, nineMasks, mayPublish, target, w, h, radius, roundRect, corner, plan, inverted = true)
       }

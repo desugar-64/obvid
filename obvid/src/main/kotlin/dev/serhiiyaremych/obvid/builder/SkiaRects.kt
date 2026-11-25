@@ -5,11 +5,7 @@
 
 package dev.serhiiyaremych.obvid.builder
 
-/**
- * `trivial_rect`'s test (SkPathPriv.cpp) on the contour of the 4 points at [base] in [m] (x, y pairs): the side vectors
- * `v0 = p1 − p0`, `v1 = p2 − p1`, `v2 = p3 − p2`, `v3 = p0 − p3` in float; `v0` has exactly one zero component and each
- * next vector is orthogonal to the one before in the other dimension.
- */
+/** Skia's `trivial_rect` test (SkPathPriv.cpp) on the contour of the 4 points at [base] in [m] (x, y pairs). */
 internal fun trivialRect(m: FloatArray, base: Int): Boolean {
   val v0x = m[base + 2] - m[base]
   val v0y = m[base + 3] - m[base + 1]

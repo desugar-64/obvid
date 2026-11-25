@@ -27,9 +27,8 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 /**
- * [ShadowBitmapBuilder.Route.Skia]: Compose's own draw calls (`createOuterShadowBitmap`, `InnerShadowRenderer`) with
- * its `Paint` configuration, on a reused canvas bound to the shadow bitmap; also the inner path + spread
- * intermediate, which both inner routes read. [bounds] is the builder's scratch rect.
+ * [ShadowBitmapBuilder.Route.Skia]: Compose's own draw calls on a reused canvas bound to the shadow bitmap. Also builds
+ * the inner path + spread intermediate. [bounds] is the builder's scratch rect.
  */
 internal class SkiaRoute(private val bounds: RectF) {
   private val shadowCanvas = android.graphics.Canvas()
@@ -57,10 +56,7 @@ internal class SkiaRoute(private val bounds: RectF) {
   val intermediateBitmap: Bitmap
     get() = checkNotNull(intermediate)
 
-  /**
-   * Compose's draw calls into [target] (the area's size), after the area's translate for the full extent (the canvas
-   * translate of a larger canvas).
-   */
+  /** Compose's drop-shadow draw calls into [target], moved by the area's translate for the full extent. */
   fun build(
     target: Bitmap,
     area: DropArea,
@@ -102,12 +98,7 @@ internal class SkiaRoute(private val bounds: RectF) {
     }
   }
 
-  /**
-   * `createInnerPathShadowBrush`'s intermediate for a positive [spread]: an A8 bitmap of `ceil(bounds)` of the path
-   * (the path at its own coordinates, not moved to the origin), the path filled, then, clipped to the bounds' size,
-   * stroked `2·spread` wide with `Clear` (eroded by the spread). Compose's calls with its renderer `Paint`, reset to a
-   * fresh one's state first; the bitmap is reused (exactly this size, cleared), so it is read whole as Compose's.
-   */
+  /** Compose's inner path + spread intermediate: the path filled, then eroded by a `2·spread` `Clear` stroke. */
   fun buildIntermediate(path: Path, spread: Float): ImageBitmap {
     // Path.getBounds: the Android path's bounds.
     @Suppress("DEPRECATION") path.asAndroidPath().computeBounds(bounds, true)
@@ -136,10 +127,7 @@ internal class SkiaRoute(private val bounds: RectF) {
     return image
   }
 
-  /**
-   * The intermediate of exactly [w] × [h], bound to its canvas: reconfigured inside its grow-only allocation, or a new
-   * one (the canvas is rebound after either: a reconfigure changes the bitmap's dimensions).
-   */
+  /** The intermediate of exactly [w] × [h], bound to its canvas. */
   private fun ensureIntermediate(w: Int, h: Int): ImageBitmap {
     val current = intermediate
     return when {
@@ -160,10 +148,7 @@ internal class SkiaRoute(private val bounds: RectF) {
     }
   }
 
-  /**
-   * `createInnerPathShadowBrush` / `createInnerShadowBrush`'s draw calls on the reused bitmap, cleared first (Compose's
-   * is new); [image] is the path + spread intermediate ([buildIntermediate]), or null.
-   */
+  /** Compose's inner-shadow draw calls into [target]; [image] is the path + spread intermediate, or null. */
   fun buildInner(
     target: Bitmap,
     path: Path?,
@@ -222,10 +207,7 @@ internal class SkiaRoute(private val bounds: RectF) {
     nativePaint.setMaskFilter(null)
   }
 
-  /**
-   * Compose's `Paint.configureShadow` (Blur.kt) with `setBlurFilter`, as the inner renderer calls it: color, blend
-   * mode, style and mask filter; the stroke width of an earlier call stays.
-   */
+  /** Compose's `Paint.configureShadow` (Blur.kt) with `setBlurFilter`, as the inner renderer calls it. */
   private fun Paint.configureInnerShadow(
     blendMode: BlendMode = BlendMode.SrcOver,
     blurFilter: BlurMaskFilter? = null,

@@ -8,7 +8,6 @@ import android.graphics.PorterDuff
 import android.graphics.RectF
 import androidx.compose.ui.geometry.CornerRadius
 import dev.serhiiyaremych.obvid.NineMaskCache
-import dev.serhiiyaremych.obvid.NineMaskKey
 import dev.serhiiyaremych.obvid.ObvidNative
 import dev.serhiiyaremych.obvid.TRACE_NINE_PATCH
 import dev.serhiiyaremych.obvid.traceSection
@@ -24,23 +23,9 @@ internal class NinePatchRoute(private val native: NativeBuilder, private val mas
     private set
 
   /**
-   * The nine-patch of [plan] for the round rect [rect] with [corner] radii. A kept blurred small round rect of this
-   * plan, corner radii and radius ([NineMaskKey]) is only stretched into [target] again: on a rebuild
-   * ([ShadowBitmaps.isRebuild]) [bitmaps]' private one first, then on any build one published in [masks] (whose last
-   * use moves to now). Otherwise the small round rect
-   * `(0, 0, rw, rh)` of the plan with the device radii (the given ones: a nine-patch's are never scaled),
-   * anti-aliased, no mask filter, is drawn at the mask's origin as Skia's `draw_rrect_into_mask` draws it into its
-   * `roundOut()` (`ceil(rw) × ceil(rh)`), then blurred and stretched into [target] natively:
-   * - a rebuild blurs into [bitmaps]' private buffer (`builderNineKeep`; rewritten in place, grown only when too small,
-   *   never published), so an animation allocates nothing per frame;
-   * - a first build blurs into a new mask published in [masks] (`builderNineKeep`) when the caller allows it
-   *   ([mayPublish]: a node's first appearance) and the cache keeps masks ([NineMaskCache.canPublish]), else through
-   *   the native builder's own buffer (`builderNine`, nothing kept, nothing allocated): a new entry forked by a node
-   *   that animates away from a shared entry is forked again on its next frame, so neither publishing nor a private
-   *   buffer would be used twice.
-   * With [inverted] (an inner shadow) every value v of [target] is written as `255 − v` by the `…InvertedHole` twin
-   * of each call, which also returns the bitmap's hole ([hole]); a kept mask holds the same blurred small round rect
-   * either way, so drop and inner shadows share it.
+   * Writes the nine-patch of [plan] for [rect] with [corner] radii into [target]. Stretches a kept blurred small round
+   * rect ([bitmaps]' private one on a rebuild, else one published in [masks]), or draws, blurs and keeps a new one.
+   * With [inverted] (an inner shadow) writes `255 − v` and sets [hole].
    */
   fun build(
     bitmaps: ShadowBitmaps,

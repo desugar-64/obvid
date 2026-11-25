@@ -17,34 +17,18 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * `createInnerPathShadowBrush` with spread > 0 (radius > 0) on Obvid's pipeline. Compose draws the intermediate
- * ([SkiaRoute.buildIntermediate], already rasterized) with `drawImage(…, offset, blur + Xor)` over the opaque bitmap;
- * Skia's `drawImage` of an A8 image with a mask filter is `drawBitmapAsMask` (the image's alpha is the blur source), so
- * B is the blur of the mask Skia forms from the intermediate at the offset, by the newest Skia's rule on every API
- * level:
- * - clipped out: the intermediate's rounded-out device rect misses the bitmap; B is empty;
- * - sprite ([treatAsSprite]): the intermediate itself at (round(ox), round(oy)), not clipped before the blur;
- * - filtered: Skia draws the intermediate at the offset, bilinear, into a temporary mask of exactly the size of the
- *   rounded mapped bounds clipped to the bitmap (the cut rect), translated by minus its top-left. The platform's
- *   `drawBitmap` with that paint draws it here the same way: into a reused A8 buffer reconfigured to exactly the cut
- *   rect's size ([ensurePlaced]), cleared, under `translate(−l, −t)`, at the offset; the blur reads that buffer with
- *   its origin at the cut rect's top-left. Drawing at device coordinates into a larger bitmap clipped to the cut rect
- *   instead can differ by 1 (seen in a one-pixel-wide cut rect).
- *
- * Skia's `drawImage` is a `drawImageRect` into `(ox, oy, ox + iw, oy + ih)`: when the float sum `ox + iw` minus `ox` is
- * not `iw` (or the same in y), its rect-to-rect matrix scales, and Skia fills that rect with the intermediate as a
- * shader under the mask filter (the blurred rect times the intermediate), not `drawBitmapAsMask`. That draw is left to
- * the Skia route ([fits]).
+ * The inner shadow of a path with spread > 0: blurs the spread intermediate ([SkiaRoute.buildIntermediate]) placed at
+ * the offset. The intermediate is clipped out, used as is (a sprite), or drawn filtered into a buffer of the cut rect's
+ * size first.
  */
 internal class InnerPathSpread(private val native: NativeBuilder) {
-  // Skia's paint for the filtered `drawImage` of the intermediate, and the buffer of exactly the cut rect's size it is
-  // drawn into (Skia's temporary mask).
+  // The paint of the filtered draw and the buffer it draws into.
   private val imagePaint =
     android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
   private var placed: Bitmap? = null
   private val placedCanvas = android.graphics.Canvas()
 
-  /** Whether `drawBitmapAsMask` draws [image] at [offset]: no scale in the rect-to-rect matrix. */
+  /** Whether this route can draw [image] at [offset]; false leaves it to the Skia route. */
   fun fits(image: Bitmap, offset: Offset): Boolean =
     (offset.x + image.width) - offset.x == image.width.toFloat() &&
       (offset.y + image.height) - offset.y == image.height.toFloat()
@@ -100,10 +84,7 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
     }
   }
 
-  /**
-   * The placement buffer of exactly [w] × [h], bound to its canvas: reconfigured inside its grow-only allocation, or a
-   * new one (the canvas is rebound after either: a reconfigure changes the bitmap's dimensions).
-   */
+  /** The placement buffer of exactly [w] × [h], bound to its canvas. */
   private fun ensurePlaced(w: Int, h: Int): Bitmap {
     val current = placed
     if (current != null && current.width == w && current.height == h) return current
@@ -119,10 +100,7 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
     return next
   }
 
-  /**
-   * Blurs the [mw] × [mh] window at ([srcX], [srcY]) of [source] (its origin at ([x], [y]) in [target]) into [target],
-   * replace mode (the rest of the bitmap, exactly the used size, is zeroed).
-   */
+  /** Blurs the [mw] × [mh] window at ([srcX], [srcY]) of [source], placed at ([x], [y]), into [target] (replace). */
   private fun blurInto(source: Bitmap, srcX: Int, srcY: Int, mw: Int, mh: Int, x: Int, y: Int, target: Bitmap, w: Int, h: Int, radius: Float) {
     val status =
       traceSection(TRACE_BLUR) {
@@ -131,12 +109,7 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
     check(status == 0) { "builderBlurFrom failed: $status" }
   }
 
-  /**
-   * `SkTreatAsSprite` for the translate that maps the [iw] × [ih] image to ([left], [top], [right], [bottom]) with
-   * Compose's paint (anti-aliased, linear filtering), as the newest Skia decides it: no fractional translate (linear
-   * filtering refuses any since Android 15, b/41322892), and the mapped bounds at 4 subpixel bits round to the integer
-   * bounds moved by the rounded translate.
-   */
+  /** Skia's `SkTreatAsSprite` for the [iw] × [ih] image mapped to ([left], [top], [right], [bottom]). */
   private fun treatAsSprite(left: Float, top: Float, right: Float, bottom: Float, iw: Int, ih: Int): Boolean {
     if (left != left.toInt().toFloat() || top != top.toInt().toFloat()) return false
     val ix = skRound(left)
