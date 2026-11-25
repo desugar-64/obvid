@@ -4,11 +4,15 @@
 package dev.serhiiyaremych.obvid.builder
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.RectF
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isSimple
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import dev.serhiiyaremych.obvid.NineMaskCache
 import dev.serhiiyaremych.obvid.NineMaskKey
 import dev.serhiiyaremych.obvid.ObvidNative
@@ -154,69 +158,54 @@ internal class ShadowBitmaps {
 
   /**
    * Whether the current build's final draw goes in bands (an inner shadow's, `ShadowDrawState`): the bitmap is 0
-   * inside the hole `[holeLeft, holeRight) × [holeTop, holeBottom)` (whole pixels of the bitmap, which is the
-   * component's local space), so the outline is drawn up to four times, each clipped to one band around it, the bands
-   * spanning `[bandLeft, bandRight) × [bandTop, bandBottom)`. Set by [setBands] for a hole large enough
-   * ([BAND_MIN_HOLE_SHARE], [BAND_MIN_HOLE_SIDE]); every build starts without ([clearBands]).
+   * inside [hole] (whole pixels of the bitmap, which is the component's local space), so the outline is drawn up to
+   * four times, each clipped to one band around it, the bands spanning [bands]. Set by [setBands] for a hole large
+   * enough ([BAND_MIN_HOLE_SHARE], [BAND_MIN_HOLE_SIDE]); every build starts without ([clearBands]).
    */
   var hasBands: Boolean = false
     private set
-  var holeLeft = 0
-    private set
-  var holeTop = 0
-    private set
-  var holeRight = 0
-    private set
-  var holeBottom = 0
-    private set
-  var bandLeft = 0
-    private set
-  var bandTop = 0
-    private set
-  var bandRight = 0
-    private set
-  var bandBottom = 0
-    private set
+
+  /** The bitmap's hole while [hasBands]: 0 inside, right and bottom exclusive. */
+  val hole = Rect()
+
+  /** The span of the four bands around [hole] while [hasBands]. */
+  val bands = Rect()
 
   fun clearBands() {
     hasBands = false
   }
 
   /**
-   * The bands of the current build from its packed [hole] (`ObvidNative.holeLeft`, …; ≤ 0: none) for a component of
-   * [width] × [height] px whose outline has the [bounds] (null: the component's rect). The hole is shrunk by
+   * The bands of the current build from its [packedHole] (`ObvidNative.holeLeft`, …; ≤ 0: none) for a component of
+   * [size] px whose outline has the [bounds] (null: the component's rect). The hole is shrunk by
    * [BAND_FILTER_INSET] on each side, then kept only if large enough; the bands span the component's rect, the
    * outline's bounds and the hole, rounded out and grown by [BAND_MARGIN].
    */
-  fun setBands(hole: Long, width: Float, height: Float, bounds: RectF?) {
+  fun setBands(packedHole: Long, size: Size, bounds: RectF?) {
     hasBands = false
-    if (hole <= 0L) return
-    val l = ObvidNative.holeLeft(hole) + BAND_FILTER_INSET
-    val t = ObvidNative.holeTop(hole) + BAND_FILTER_INSET
-    val r = ObvidNative.holeRight(hole) - BAND_FILTER_INSET
-    val b = ObvidNative.holeBottom(hole) - BAND_FILTER_INSET
+    if (packedHole <= 0L) return
+    val l = ObvidNative.holeLeft(packedHole) + BAND_FILTER_INSET
+    val t = ObvidNative.holeTop(packedHole) + BAND_FILTER_INSET
+    val r = ObvidNative.holeRight(packedHole) - BAND_FILTER_INSET
+    val b = ObvidNative.holeBottom(packedHole) - BAND_FILTER_INSET
     val w = r - l
     val h = b - t
-    val large = !(w < BAND_MIN_HOLE_SIDE || h < BAND_MIN_HOLE_SIDE) && !(w.toFloat() * h < BAND_MIN_HOLE_SHARE * width * height)
+    val large =
+      !(w < BAND_MIN_HOLE_SIDE || h < BAND_MIN_HOLE_SIDE) &&
+        !(w.toFloat() * h < BAND_MIN_HOLE_SHARE * size.width * size.height)
     if (large) {
       var outerL = min(0, l)
       var outerT = min(0, t)
-      var outerR = max(ceil(width).toInt(), r)
-      var outerB = max(ceil(height).toInt(), b)
+      var outerR = max(ceil(size.width).toInt(), r)
+      var outerB = max(ceil(size.height).toInt(), b)
       if (bounds != null) {
         outerL = min(outerL, floor(bounds.left).toInt())
         outerT = min(outerT, floor(bounds.top).toInt())
         outerR = max(outerR, ceil(bounds.right).toInt())
         outerB = max(outerB, ceil(bounds.bottom).toInt())
       }
-      holeLeft = l
-      holeTop = t
-      holeRight = r
-      holeBottom = b
-      bandLeft = outerL - BAND_MARGIN
-      bandTop = outerT - BAND_MARGIN
-      bandRight = outerR + BAND_MARGIN
-      bandBottom = outerB + BAND_MARGIN
+      hole.set(l, t, r, b)
+      bands.set(outerL - BAND_MARGIN, outerT - BAND_MARGIN, outerR + BAND_MARGIN, outerB + BAND_MARGIN)
       hasBands = true
     }
   }
@@ -305,27 +294,21 @@ internal class ShadowBitmaps {
 
   /**
    * Where the last build's bitmap lies in Compose's own bitmap, in whole px: its top-left pixel is Compose's pixel
-   * ([originX], [originY]). 0 for Compose's window (every inner shadow); for a drop shadow's full extent the full
+   * [origin]. Zero for Compose's window (every inner shadow); for a drop shadow's full extent the full
    * window's start, negative where it reaches past Compose's. The draw places the bitmap at Compose's position plus
    * this.
    */
-  var originX: Int = 0
-    private set
-  var originY: Int = 0
+  var origin: IntOffset = IntOffset.Zero
     private set
 
   /** Compose's own bitmap size for the last build: the bitmap's size for Compose's window; a drop brush spans it. */
-  var composeWidth: Int = 0
-    private set
-  var composeHeight: Int = 0
+  var composeSize: IntSize = IntSize.Zero
     private set
 
-  /** Sets [originX], [originY], [composeWidth] and [composeHeight] for the current build. */
-  fun setWindow(originX: Int, originY: Int, composeWidth: Int, composeHeight: Int) {
-    this.originX = originX
-    this.originY = originY
-    this.composeWidth = composeWidth
-    this.composeHeight = composeHeight
+  /** Sets [origin] and [composeSize] for the current build. */
+  fun setWindow(origin: IntOffset, composeSize: IntSize) {
+    this.origin = origin
+    this.composeSize = composeSize
   }
 
   /**

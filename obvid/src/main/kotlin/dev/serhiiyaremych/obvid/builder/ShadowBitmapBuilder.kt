@@ -9,6 +9,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import dev.serhiiyaremych.obvid.NineMaskCache
 import dev.serhiiyaremych.obvid.NineMaskKey
 import dev.serhiiyaremych.obvid.ObvidNative
@@ -405,7 +407,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     val w = ceil(size.width).toInt() + pad * 2
     val h = ceil(size.height).toInt() + pad * 2
     require(w > 0 && h > 0) { "empty shadow bitmap ${w}x$h" }
-    target.setWindow(0, 0, w, h)
+    target.setWindow(IntOffset.Zero, IntSize(w, h))
     val bitmap = target.prepare(w, h, preserveCurrent)
     // Sets the route when it takes the build.
     val taken =
@@ -488,7 +490,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     if (hole > 0L && (path == null || (path.isConvex && !path.asAndroidPath().isInverseFillType))) {
       // A path may reach past the component: the bands must cover all of it.
       @Suppress("DEPRECATION") if (path != null) path.asAndroidPath().computeBounds(bounds, true)
-      target.setBands(hole, size.width, size.height, if (path != null) bounds else null)
+      target.setBands(hole, size, if (path != null) bounds else null)
     }
   }
 

@@ -5,6 +5,8 @@ package dev.serhiiyaremych.obvid.builder
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -102,7 +104,7 @@ internal class DropArea {
   /** The current build's bitmap, of the area's size, with the area recorded in it ([ShadowBitmaps.setWindow]). */
   fun prepare(): Bitmap {
     val bitmaps = checkNotNull(target)
-    bitmaps.setWindow(-x.toInt(), -y.toInt(), composeWidth, composeHeight)
+    bitmaps.setWindow(IntOffset(-x.toInt(), -y.toInt()), IntSize(composeWidth, composeHeight))
     return bitmaps.prepare(width, height, preserve)
   }
 }

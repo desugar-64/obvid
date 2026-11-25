@@ -369,8 +369,8 @@ class FullExtentTest {
     val w = bmp.width
     val h = bmp.height
     val obvid = alphaOf(bmp, w, h)
-    val ox = target.originX
-    val oy = target.originY
+    val ox = target.origin.x
+    val oy = target.origin.y
 
     // A: Obvid's canvas, wider and taller by EXTRA.
     val a = Bitmap.createBitmap(w + EXTRA, h + EXTRA, Bitmap.Config.ALPHA_8)
@@ -418,8 +418,8 @@ class FullExtentTest {
       h,
       ox,
       oy,
-      target.composeWidth,
-      target.composeHeight,
+      target.composeSize.width,
+      target.composeSize.height,
       ScreenCases.diffAlpha(aWindow, obvid),
       extraA,
       outsideB,
@@ -543,8 +543,8 @@ class FullExtentTest {
               e.key.extent,
               e.usedWidth,
               e.usedHeight,
-              e.bitmaps.originX,
-              e.bitmaps.originY,
+              e.bitmaps.origin.x,
+              e.bitmaps.origin.y,
             )
           }
         val line =
@@ -619,7 +619,7 @@ class FullExtentTest {
       advance(i)
       captures += ScreenCases.pixelsOf(rule.onNodeWithTag(TAG_BRUSH_CELL).captureToImage().asAndroidBitmap())
     }
-    val origin = mainStore { store -> store.entriesForTest().single().bitmaps.let { it.originX to it.originY } }
+    val origin = mainStore { store -> store.entriesForTest().single().bitmaps.let { it.origin.x to it.origin.y } }
     content = null
     rule.waitForIdle()
 

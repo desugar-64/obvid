@@ -397,8 +397,8 @@ class NinePatchReuseTest {
     if (inner) b.buildInner(t, outline, size, radius, spread, ox, oy, preserve) else b.build(t, outline, size, radius, spread, preserve)
   }
 
-  /** The kept small-mask buffer of [t] (a private field: read for the test only). */
-  private fun keptBuffer(t: ShadowBitmaps): Bitmap? = NINE_MASK_FIELD.get(t) as Bitmap?
+  /** The kept small-mask buffer of [t]. */
+  private fun keptBuffer(t: ShadowBitmaps): Bitmap? = t.nineMask
 
   private companion object {
     const val TAG = "FS-NineReuse"
@@ -416,8 +416,6 @@ class NinePatchReuseTest {
     /** Relative weights of the change kinds (the offset only for the inner shadow). */
     val CHANGE_WEIGHTS =
       listOf(Change.Offset to 30, Change.Size to 30, Change.Radius to 15, Change.Corner to 10, Change.Spread to 15)
-
-    val NINE_MASK_FIELD = ShadowBitmaps::class.java.getDeclaredField("nineMask").apply { isAccessible = true }
 
     fun bit(b: Boolean) = if (b) 1 else 0
 
