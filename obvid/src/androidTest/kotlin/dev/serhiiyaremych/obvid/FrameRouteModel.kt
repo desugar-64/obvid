@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max

@@ -170,7 +170,7 @@ STAGES = ('alloc', 'mask', 'blur', 'write', 'resample', 'glue', 'record', 'other
 
 # Frame-name keys of the stage rules (substrings; see stage_of for their order).
 ALLOC_KEYS = ('android.graphics.Bitmap.createBitmap', 'Bitmap_creator', 'allocateHeapBitmap',
-              'androidx.compose.ui.graphics.ImageBitmapKt.ImageBitmap', 'ShadowBitmapBuilderKt.newA8')
+              'androidx.compose.ui.graphics.ImageBitmapKt.ImageBitmap', 'A8BitmapsKt.newA8')
 RECORD_KEYS = ('android.graphics.BaseRecordingCanvas.', 'android.graphics.RecordingCanvas.', 'SkiaRecordingCanvas',
                'DisplayListData', 'RecordingCanvas::')
 DRAW_SCOPE_DRAW = re.compile(r'(CanvasDrawScope|LayoutNodeDrawScope)\.draw(?!Content|Direct)')

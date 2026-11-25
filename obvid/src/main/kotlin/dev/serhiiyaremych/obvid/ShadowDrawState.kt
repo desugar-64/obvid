@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.toSize
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 
 /**
  * A node's handle on its [ShadowEntry] plus the objects Compose's `ShadowRenderer` / `DropShadowRenderer` /

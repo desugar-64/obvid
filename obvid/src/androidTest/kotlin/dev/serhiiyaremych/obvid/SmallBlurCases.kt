@@ -3,6 +3,7 @@
 
 package dev.serhiiyaremych.obvid
 
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
 import dev.serhiiyaremych.obvid.fixtures.ShapeCase
 

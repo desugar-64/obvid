@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
 import dev.serhiiyaremych.obvid.fixtures.InnerShadowReference

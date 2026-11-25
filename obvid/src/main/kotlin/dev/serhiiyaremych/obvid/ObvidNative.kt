@@ -5,6 +5,7 @@ package dev.serhiiyaremych.obvid
 
 import android.graphics.Bitmap
 import android.util.Log
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
 
 /**
  * JNI entry to the Rust crate in `obvid/rust`, the shipping surface: the library smoke check and the `builder*` calls

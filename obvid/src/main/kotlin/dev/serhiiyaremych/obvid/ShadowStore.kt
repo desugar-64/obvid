@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import java.lang.ref.WeakReference
 import kotlin.math.max
 import kotlin.math.min

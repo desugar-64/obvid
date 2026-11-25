@@ -5,6 +5,7 @@ package dev.serhiiyaremych.obvid
 
 import android.os.Process
 import androidx.compose.ui.graphics.Outline
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue

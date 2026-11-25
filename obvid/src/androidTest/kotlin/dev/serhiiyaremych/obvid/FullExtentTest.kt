@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas as ComposeCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Outline
@@ -45,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.serhiiyaremych.obvid.ScreenCases.showOverLockScreen
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import dev.serhiiyaremych.obvid.fixtures.BlurFilter
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
@@ -63,7 +66,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import androidx.compose.ui.graphics.Canvas as ComposeCanvas
 
 /**
  * [ShadowExtent.Full]: the drop shadow's bitmap against Android's own blur on a canvas large enough that nothing is
