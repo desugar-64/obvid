@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -17,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.InnerShadowReference
 import dev.serhiiyaremych.obvid.fixtures.alphaOf
@@ -227,7 +230,7 @@ class NinePatchReuseTest {
         fun build(sizeDp: Int, ox: Float) {
           val s = size(sizeDp)
           val outline = shape.createOutline(s, LayoutDirection.Ltr, density)
-          if (inner) b.buildInner(t, outline, s, radius, 0f, ox, 0f, preserveCurrent = true) else b.build(t, outline, s, radius, 0f)
+          if (inner) b.buildInner(t, outline, s, radius, 0f, Offset(ox, 0f), preserveCurrent = true) else b.build(t, outline, s, radius, 0f)
           assertEquals("route (inner $inner)", ShadowBitmapBuilder.Route.NinePatch, b.route)
         }
         build(200, 3f)
@@ -392,11 +395,11 @@ class NinePatchReuseTest {
     oy: Float,
     preserve: Boolean,
   ) {
-    if (inner) b.buildInner(t, outline, size, radius, spread, ox, oy, preserve) else b.build(t, outline, size, radius, spread, preserve)
+    if (inner) b.buildInner(t, outline, size, radius, spread, Offset(ox, oy), preserve) else b.build(t, outline, size, radius, spread, preserve)
   }
 
-  /** The kept small-mask buffer of [t] (a private field: read for the test only). */
-  private fun keptBuffer(t: ShadowBitmaps): Bitmap? = NINE_MASK_FIELD.get(t) as Bitmap?
+  /** The kept small-mask buffer of [t]. */
+  private fun keptBuffer(t: ShadowBitmaps): Bitmap? = t.nineMask
 
   private companion object {
     const val TAG = "FS-NineReuse"
@@ -414,8 +417,6 @@ class NinePatchReuseTest {
     /** Relative weights of the change kinds (the offset only for the inner shadow). */
     val CHANGE_WEIGHTS =
       listOf(Change.Offset to 30, Change.Size to 30, Change.Radius to 15, Change.Corner to 10, Change.Spread to 15)
-
-    val NINE_MASK_FIELD = ShadowBitmaps::class.java.getDeclaredField("nineMask").apply { isAccessible = true }
 
     fun bit(b: Boolean) = if (b) 1 else 0
 

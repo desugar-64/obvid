@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import dev.serhiiyaremych.obvid.fixtures.CaseGeometry
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
@@ -585,7 +587,7 @@ class ShadowBitmapBuilderTest {
               prediction.gap ?: "",
               prediction.rule,
               expectedRoute,
-            ) + o.columns() + listOf(target.originX, target.originY))
+            ) + o.columns() + listOf(target.origin.x, target.origin.y))
             .joinToString(",")
       val result =
         MaskRouteGapCases.Result(
@@ -599,7 +601,7 @@ class ShadowBitmapBuilderTest {
           o.diff.pixels,
           expectedRoute,
         )
-      return GapRow(csv, o, result, target.originX, target.originY)
+      return GapRow(csv, o, result, target.origin.x, target.origin.y)
     }
     val fresh = cases.map { run(it, "fresh") }
     val full = cases.filter { it.gap == MaskRouteGapCases.INVERSE }.map { run(it, "full") }

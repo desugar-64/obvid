@@ -8,6 +8,7 @@ import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
@@ -19,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import dev.serhiiyaremych.obvid.fixtures.ComposeShadowReference
 import dev.serhiiyaremych.obvid.fixtures.FrameShape
 import dev.serhiiyaremych.obvid.fixtures.InnerShadowReference
@@ -892,7 +895,7 @@ class InnerShadowBuilderTest {
     val before = target.bitmap
     val genBefore = before?.generationId
     val beforePixels = if (preserve && before != null) alphaOf(before) else null
-    builder.buildInner(target, outline, g.size, g.radius, g.spread, c.ox, c.oy, preserve)
+    builder.buildInner(target, outline, g.size, g.radius, g.spread, Offset(c.ox, c.oy), preserve)
     val bmp = target.bitmap!!
     check(bmp.width == ref.width && bmp.height == ref.height) {
       "${c.key}: bitmap ${bmp.width}x${bmp.height} vs reference ${ref.width}x${ref.height}"
@@ -1007,14 +1010,14 @@ class InnerShadowBuilderTest {
         val outline = shape.shape.createOutline(g1.size, LayoutDirection.Ltr, density)
         val ox = with(density) { 2.dp.toPx() }
         val oy = with(density) { 4.dp.toPx() }
-        b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy)
-        b.buildInner(t, outline, g1.size, r2, g1.spread, ox, oy, preserveCurrent = true)
+        b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy))
+        b.buildInner(t, outline, g1.size, r2, g1.spread, Offset(ox, oy), preserveCurrent = true)
         // The nine-patch keeps its blurred small round rect from the second build on, sized for that
         // radius: a third build at the first radius grows it to both.
-        b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy, preserveCurrent = true)
-        val radius = count { repeat(10) { b.buildInner(t, outline, g1.size, if (it % 2 == 0) g1.radius else r2, g1.spread, ox, oy, true) } }
-        val offset = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox + it * 0.37f, oy - it * 0.25f, true) } }
-        val same = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy, true) } }
+        b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy), preserveCurrent = true)
+        val radius = count { repeat(10) { b.buildInner(t, outline, g1.size, if (it % 2 == 0) g1.radius else r2, g1.spread, Offset(ox, oy), true) } }
+        val offset = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox + it * 0.37f, oy - it * 0.25f), true) } }
+        val same = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy), true) } }
         parts += "$label (${b.route}): radius changing $radius, offset changing $offset, nothing changed $same"
       }
     }
@@ -1074,14 +1077,14 @@ class InnerShadowBuilderTest {
       val outline = shape.createOutline(g1.size, LayoutDirection.Ltr, density)
       val ox = with(density) { 2.dp.toPx() }
       val oy = with(density) { 4.dp.toPx() }
-      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy)
-      b.buildInner(t, outline, g1.size, r2, g1.spread, ox, oy, preserveCurrent = true)
-      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy, preserveCurrent = true)
-      val radius = count { repeat(10) { b.buildInner(t, outline, g1.size, if (it % 2 == 0) g1.radius else r2, g1.spread, ox, oy, true) } }
+      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy))
+      b.buildInner(t, outline, g1.size, r2, g1.spread, Offset(ox, oy), preserveCurrent = true)
+      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy), preserveCurrent = true)
+      val radius = count { repeat(10) { b.buildInner(t, outline, g1.size, if (it % 2 == 0) g1.radius else r2, g1.spread, Offset(ox, oy), true) } }
       // The radius loop ends at r2: back to the first radius outside the count, so the next loops keep the radius.
-      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy, preserveCurrent = true)
-      val offset = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox + it * 0.37f, oy - it * 0.25f, true) } }
-      val same = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, ox, oy, true) } }
+      b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy), preserveCurrent = true)
+      val offset = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox + it * 0.37f, oy - it * 0.25f), true) } }
+      val same = count { repeat(10) { b.buildInner(t, outline, g1.size, g1.radius, g1.spread, Offset(ox, oy), true) } }
       Allocations(label, b.route.name, radius, offset, same)
     }
 

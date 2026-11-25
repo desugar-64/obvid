@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import androidx.collection.MutableScatterMap
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
@@ -20,6 +21,8 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 import java.lang.ref.WeakReference
 import kotlin.math.max
 import kotlin.math.min
@@ -93,7 +96,7 @@ internal class ShadowEntry(val key: ShadowGeometry) {
     val preserve = sampledByShader || sharedSinceBuild
     if (k.inner) {
       builder.buildInner(
-        bitmaps, outline, k.size, k.radiusPx, k.spreadPx, k.offsetXPx, k.offsetYPx, preserve, mayPublish,
+        bitmaps, outline, k.size, k.radiusPx, k.spreadPx, Offset(k.offsetXPx, k.offsetYPx), preserve, mayPublish,
       )
     } else {
       builder.build(bitmaps, outline, k.size, k.radiusPx, k.spreadPx, preserve, mayPublish, k.extent == ShadowExtent.Full)
@@ -118,7 +121,7 @@ internal class ShadowEntry(val key: ShadowGeometry) {
   /**
    * The bitmap size of the last build, the bitmap's own size: Compose's (drop: `ceil(size + 2·radius + 2·spread)` per
    * axis; inner: `ceil(size)`, plus `2·ceil(radius)` for a path), or a drop shadow's full-extent window
-   * ([ShadowBitmaps.originX]).
+   * ([ShadowBitmaps.origin]).
    */
   val usedWidth: Int
     get() = bitmaps.bitmap?.width ?: 0

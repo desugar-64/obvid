@@ -5,6 +5,10 @@ package dev.serhiiyaremych.obvid
 
 import android.graphics.Bitmap
 import androidx.collection.MutableScatterMap
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
+import dev.serhiiyaremych.obvid.builder.a8Bytes
+import dev.serhiiyaremych.obvid.builder.newA8
 
 /**
  * The key of a blurred small round rect of the nine-patch route: the plan (`ObvidNative.builderPlanRoundRect`'s

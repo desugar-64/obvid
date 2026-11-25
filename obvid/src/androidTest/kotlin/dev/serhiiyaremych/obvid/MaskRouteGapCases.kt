@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.serhiiyaremych.obvid.builder.ShadowBitmapBuilder
 import dev.serhiiyaremych.obvid.fixtures.ShapeCase
 import dev.serhiiyaremych.obvid.fixtures.catalogShape
 import kotlin.math.abs

@@ -35,7 +35,24 @@ For device tests, benchmarks, profiling and traces, use the `build-and-measure` 
 - Discuss each step and get the user's approval before writing code or docs for it. Commit only when asked.
 - Rust tests live in a sibling file, `name_tests.rs` next to `name.rs`, declared with
   `#[cfg(test)] #[path = "name_tests.rs"] mod tests;`.
-- Code comments document the code and its tricky spots, not plans or history.
+- Code comments follow "Code documentation" below. Long comments that explain why the code is written this way are
+  not allowed.
+
+## Code documentation
+- Describe **what** a component does, not **how** or **why** it was implemented that way.
+- Focus on responsibilities, observable behavior, API contracts, and non-obvious constraints.
+- Prefer one or two short, declarative sentences. Expand only when necessary for correct usage.
+- Use plain, direct language, familiar technical terms, and active voice. Avoid complex sentence structures,
+  unnecessary adjectives, filler words, and redundant explanations.
+- Start with the component's purpose rather than introductory context.
+- Do not narrate reasoning, design decisions, implementation alternatives, or development history.
+- Do not repeat information already expressed by names, types, or signatures.
+- Use inline comments only to explain non-obvious logic, invariants, or edge cases.
+- Omit documentation when the code is sufficiently self-explanatory.
+- Keep architectural rationale in separate design documents or ADRs (here: `docs/how-it-works.md`).
+
+Documentation is a reference, not a narrative. Every sentence must convey information necessary to understand or
+correctly use the component.
 
 ## Measurement rules
 - Standard Android tools only: Microbenchmark, Macrobenchmark, Perfetto, simpleperf. No home-made harness.

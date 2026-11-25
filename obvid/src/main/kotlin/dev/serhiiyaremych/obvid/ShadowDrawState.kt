@@ -33,9 +33,12 @@ import androidx.compose.ui.node.requireDensity
 import androidx.compose.ui.node.requireLayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.toSize
+import dev.serhiiyaremych.obvid.builder.ShadowBitmaps
 
 /**
  * A node's handle on its [ShadowEntry] plus the objects Compose's `ShadowRenderer` / `DropShadowRenderer` /
@@ -90,7 +93,7 @@ internal class ShadowDrawState {
    * `DropShadowPainter.onDraw` → `ShadowRenderer.drawShadow` → `DropShadowRenderer.onDrawShadow`, with the same calls
    * in the same order: rebuild through [ShadowStore] if the geometry (the [extent] included) changed, then Compose's
    * draw call. The painter's own alpha is 1 and its color filter null in the modifier, so [alpha] (in [0, 1]) is drawn
-   * as is. A full-extent bitmap is drawn at Compose's position moved by its origin ([ShadowBitmaps.originX]), so the
+   * as is. A full-extent bitmap is drawn at Compose's position moved by its origin ([ShadowBitmaps.origin]), so the
    * pixels Compose's window holds land where Compose draws them; a brush's gradient stays on Compose's window.
    */
   fun DrawScope.drawShadow(
@@ -116,9 +119,9 @@ internal class ShadowDrawState {
     this@ShadowDrawState.entry = entry
     translate(offsetXPx, offsetYPx) {
       val offset = -(radiusPx + spreadPx)
-      val bitmaps = entry.bitmaps
-      val left = if (bitmaps.originX == 0) offset else offset + bitmaps.originX
-      val top = if (bitmaps.originY == 0) offset else offset + bitmaps.originY
+      val origin = entry.bitmaps.origin
+      val left = if (origin.x == 0) offset else offset + origin.x
+      val top = if (origin.y == 0) offset else offset + origin.y
       if (brush != null) {
         val shaderBrush = obtainCompositeBrush(entry, brush)
         // A BitmapShader's image is not pinned at sync: the next build must not rewrite this bitmap.
@@ -127,7 +130,7 @@ internal class ShadowDrawState {
         translate(offset, offset) {
           drawRect(
             brush = shaderBrush,
-            topLeft = Offset(bitmaps.originX.toFloat(), bitmaps.originY.toFloat()),
+            topLeft = entry.bitmaps.origin.toOffset(),
             size = Size(entry.usedWidth.toFloat(), entry.usedHeight.toFloat()),
             alpha = alpha,
             blendMode = blendMode,
@@ -206,14 +209,16 @@ internal class ShadowDrawState {
     // clip is not anti-aliased (HWUI's `clipRect`): adjacent bands share their edges without a pixel drawn twice or
     // missed, and on the GPU an axis-aligned one is a scissor, so the hole is never shaded.
     entry.bandDrawCount++
-    val l = bitmaps.bandLeft.toFloat()
-    val t = bitmaps.bandTop.toFloat()
-    val r = bitmaps.bandRight.toFloat()
-    val b = bitmaps.bandBottom.toFloat()
-    val hl = bitmaps.holeLeft.toFloat()
-    val ht = bitmaps.holeTop.toFloat()
-    val hr = bitmaps.holeRight.toFloat()
-    val hb = bitmaps.holeBottom.toFloat()
+    val bands = bitmaps.bands
+    val hole = bitmaps.hole
+    val l = bands.left.toFloat()
+    val t = bands.top.toFloat()
+    val r = bands.right.toFloat()
+    val b = bands.bottom.toFloat()
+    val hl = hole.left.toFloat()
+    val ht = hole.top.toFloat()
+    val hr = hole.right.toFloat()
+    val hb = hole.bottom.toFloat()
     clipRect(l, t, r, ht) { fillOutline(bitmaps, target, alpha, filter, blendMode) }
     clipRect(l, hb, r, b) { fillOutline(bitmaps, target, alpha, filter, blendMode) }
     clipRect(l, ht, hl, hb) { fillOutline(bitmaps, target, alpha, filter, blendMode) }
@@ -394,12 +399,11 @@ internal class ShadowDrawState {
     }
     val bitmaps = entry.bitmaps
     val image = ImageShader(entry.imageBitmap())
-    if (bitmaps.originX != 0 || bitmaps.originY != 0) {
-      image.setLocalMatrix(
-        android.graphics.Matrix().apply { setTranslate(bitmaps.originX.toFloat(), bitmaps.originY.toFloat()) }
-      )
+    val origin = bitmaps.origin
+    if (origin != IntOffset.Zero) {
+      image.setLocalMatrix(android.graphics.Matrix().apply { setTranslate(origin.x.toFloat(), origin.y.toFloat()) })
     }
-    val size = Size(bitmaps.composeWidth.toFloat(), bitmaps.composeHeight.toFloat())
+    val size = bitmaps.composeSize.toSize()
     val source = if (brush is ShaderBrush) ShaderBrush(brush.createShader(size)) else brush
     return Brush.composite(ShaderBrush(image), source, BlendMode.SrcIn)
       .also {

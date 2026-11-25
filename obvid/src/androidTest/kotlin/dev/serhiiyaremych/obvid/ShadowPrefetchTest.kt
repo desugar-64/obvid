@@ -488,12 +488,10 @@ class ShadowPrefetchTest {
     val b = entry.bitmaps
     assertTrue("${c.name}: built", entry.built)
     assertTrue("${c.name}: pixels", a.bitmap!!.sameAs(b.bitmap!!))
-    assertEquals("${c.name}: window", listOf(a.originX, a.originY, a.composeWidth, a.composeHeight), listOf(b.originX, b.originY, b.composeWidth, b.composeHeight))
+    assertEquals("${c.name}: window", listOf(a.origin, a.composeSize), listOf(b.origin, b.composeSize))
     assertEquals("${c.name}: bands", a.hasBands, b.hasBands)
     if (a.hasBands) {
-      val ah = listOf(a.holeLeft, a.holeTop, a.holeRight, a.holeBottom, a.bandLeft, a.bandTop, a.bandRight, a.bandBottom)
-      val bh = listOf(b.holeLeft, b.holeTop, b.holeRight, b.holeBottom, b.bandLeft, b.bandTop, b.bandRight, b.bandBottom)
-      assertEquals("${c.name}: hole and bands", ah, bh)
+      assertEquals("${c.name}: hole and bands", listOf(a.hole, a.bands), listOf(b.hole, b.bands))
     }
     assertEquals("${c.name}: corner radius", a.cornerRadius, b.cornerRadius)
   }

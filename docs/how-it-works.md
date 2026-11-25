@@ -213,9 +213,24 @@ the first worker, and that worker reads the core layout. A worker stops after 3 
 in parallel do not share their blurred nine-patch masks, so the total CPU work is a little higher. On a Pixel 6, the
 app's CPU time and the energy of the CPU rails stayed the same within the noise.
 
-**Traces.** `Obvid prefetch build` is a build on a worker. `Obvid outline`, `Obvid blur`, `Obvid nine-patch` or
-`Obvid Skia route` are directly inside it; there is no `Obvid dropShadow build` around them. `Obvid prefetch wait` is
-a draw that waits for a worker.
+## Trace sections
+
+Obvid adds trace sections with the app tag. You see them in Perfetto and in Macrobenchmark traces. A section shows only
+when a bitmap is built; a draw of a cached bitmap adds none.
+
+| Section | What it covers |
+|---|---|
+| `Obvid dropShadow build`, `Obvid innerShadow build` | One full build on the main thread. |
+| `Obvid outline` | The platform `Canvas` draws the shape into an alpha mask. |
+| `Obvid blur` | The native blur of that mask into the shadow bitmap. |
+| `Obvid nine-patch` | A round rect or a rect frame, blurred small and stretched (or a kept blurred piece, only stretched). |
+| `Obvid Skia route` | A shadow that the device's Skia draws with Compose's own draw calls. |
+| `Obvid prefetch build` | A first build on a worker ([parallel builds](#parallel-builds)). |
+| `Obvid prefetch wait` | A draw on the main thread that waits for a worker's build. |
+
+In a build, the time outside the inner sections is the outline's creation, the bitmap's preparation and the inversion
+of an inner shadow. In `Obvid prefetch build`, `Obvid outline`, `Obvid blur`, `Obvid nine-patch` or `Obvid Skia route`
+are directly inside it; there is no `Obvid dropShadow build` around them.
 
 ## How Obvid stays fast
 

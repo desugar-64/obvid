@@ -16,32 +16,23 @@ public enum class ShadowBuilds {
   Inline,
 
   /**
-   * On worker threads (one per big core but one, at most 3), started when the shadow's node is measured. The draw
-   * then takes the finished bitmap, waits while a worker builds it, or builds it itself when no worker started it.
-   * A screen that opens with many shadows draws its first frame faster: the builds run in parallel, and during the
-   * layout that comes before the draw.
+   * On worker threads, started when the shadow's node is measured; the draw uses the finished bitmap or waits for it.
+   * The first frame of a screen with many shadows draws faster.
    *
-   * Costs and limits:
-   * - only first builds: a shadow that changes (an animation) rebuilds in the draw, as with [Inline];
-   * - the parameters are read at layout too (a block shadow's block runs once more there); a shadow whose geometry
-   *   (shape, size, layout direction, density, radius, spread, an inner shadow's offset) changes between layout and
-   *   draw builds again in the draw; a change of only its color, brush, alpha or blend mode uses the worker's bitmap;
-   * - worker threads compete with the app's other work for the big cores, and each worker holds its own build buffers
-   *   while it runs (they stop after 3 s without work);
-   * - a little more total CPU work than [Inline]: shadows built in parallel do not share the blurred corner masks that
-   *   inline builds reuse from each other.
+   * Limits:
+   * - first builds only: a shadow that changes rebuilds in the draw;
+   * - a block shadow's block also runs at layout; a geometry change between layout and draw builds again in the draw;
+   * - workers compete with the app's other work for the big cores;
+   * - a little more total CPU work than [Inline].
    *
-   * No effect where the modifiers fall back to Compose's own (the native library cannot be used).
+   * No effect when the modifiers fall back to Compose's own.
    */
   Parallel,
 }
 
 /**
- * The [ShadowBuilds] of every [dropShadow] and [innerShadow] below, read when a shadow's node is attached and again
- * when it is measured. A change applies to shadows queued or built after it: a shadow already built keeps its bitmap,
- * and a build already queued is still used by the draw. A node
- * attached with [ShadowBuilds.Inline] stays draw-only, as Compose's, and builds inline until it is attached again
- * (for example, under a new `key`).
+ * The [ShadowBuilds] of every [dropShadow] and [innerShadow] below. A change applies to shadows built after it. A node
+ * attached with [ShadowBuilds.Inline] builds inline until it is attached again.
  *
  * ```
  * CompositionLocalProvider(LocalShadowBuilds provides ShadowBuilds.Parallel) { FeedScreen() }
