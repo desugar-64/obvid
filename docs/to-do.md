@@ -1,6 +1,6 @@
 # To do
 
-Ideas that were measured or scoped, but are not in Obvid yet.
+Ideas that were measured or scoped. The items that are done are at the end, under [Done](#done).
 
 ## Parallel rebuilds
 
@@ -61,3 +61,17 @@ Currently, 32-bit ARM (NEON) and x86_64 (emulators) use the Compose shadows.
 ## Maven Central
 
 After the GitHub Pages repository shows that it is reliable.
+
+## Done
+
+### Parallel builds when a screen opens
+
+Done in [#14](https://github.com/desugar-64/obvid/issues/14), not released yet. The opt-in `ShadowBuilds.Parallel`
+builds the bitmaps of new shadows on worker threads during the layout: see
+[Parallel builds](how-it-works.md#parallel-builds). The next step is [Parallel rebuilds](#parallel-rebuilds).
+
+### A NEON small blur
+
+Done in 0.1.1 ([#2](https://github.com/desugar-64/obvid/issues/2)). Shadows with a blur radius below approximately
+2.6 px use the Obvid blur on all shapes: see
+[Same arithmetic, same results](how-it-works.md#same-arithmetic-same-results).

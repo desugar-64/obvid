@@ -81,6 +81,9 @@ Several issues at once: draft them all, get one approval for the set, file them 
 - Commit only when the user asks. Commit subjects in the repo's style (`scope: what changed`).
 - If the feature changes what users get, add its line under `## Unreleased` in `CHANGELOG.md`, with a link to the
   issue. Never edit the version: that is the `release` skill's job.
+- If the work finishes a to-do item, tick it in the README's To do list, without a version. In `docs/to-do.md`, move
+  its section under `## Done` (newest first): "Done in #<n>, not released yet.", then a link to the docs that describe
+  it now. A partly finished item stays open; its text names what is left.
 - Device tests: the fast set, or the full suite for the areas that the `build-and-measure` skill lists under "Device
   tests". The PR's Validation names the set.
 
