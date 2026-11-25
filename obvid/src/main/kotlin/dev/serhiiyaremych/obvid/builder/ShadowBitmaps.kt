@@ -197,27 +197,28 @@ internal class ShadowBitmaps {
     val b = ObvidNative.holeBottom(hole) - BAND_FILTER_INSET
     val w = r - l
     val h = b - t
-    if (w < BAND_MIN_HOLE_SIDE || h < BAND_MIN_HOLE_SIDE) return
-    if (w.toFloat() * h < BAND_MIN_HOLE_SHARE * width * height) return
-    var outerL = min(0, l)
-    var outerT = min(0, t)
-    var outerR = max(ceil(width).toInt(), r)
-    var outerB = max(ceil(height).toInt(), b)
-    if (bounds != null) {
-      outerL = min(outerL, floor(bounds.left).toInt())
-      outerT = min(outerT, floor(bounds.top).toInt())
-      outerR = max(outerR, ceil(bounds.right).toInt())
-      outerB = max(outerB, ceil(bounds.bottom).toInt())
+    val large = !(w < BAND_MIN_HOLE_SIDE || h < BAND_MIN_HOLE_SIDE) && !(w.toFloat() * h < BAND_MIN_HOLE_SHARE * width * height)
+    if (large) {
+      var outerL = min(0, l)
+      var outerT = min(0, t)
+      var outerR = max(ceil(width).toInt(), r)
+      var outerB = max(ceil(height).toInt(), b)
+      if (bounds != null) {
+        outerL = min(outerL, floor(bounds.left).toInt())
+        outerT = min(outerT, floor(bounds.top).toInt())
+        outerR = max(outerR, ceil(bounds.right).toInt())
+        outerB = max(outerB, ceil(bounds.bottom).toInt())
+      }
+      holeLeft = l
+      holeTop = t
+      holeRight = r
+      holeBottom = b
+      bandLeft = outerL - BAND_MARGIN
+      bandTop = outerT - BAND_MARGIN
+      bandRight = outerR + BAND_MARGIN
+      bandBottom = outerB + BAND_MARGIN
+      hasBands = true
     }
-    holeLeft = l
-    holeTop = t
-    holeRight = r
-    holeBottom = b
-    bandLeft = outerL - BAND_MARGIN
-    bandTop = outerT - BAND_MARGIN
-    bandRight = outerR + BAND_MARGIN
-    bandBottom = outerB + BAND_MARGIN
-    hasBands = true
   }
 
   /** Drops the outline: its inputs changed, the owner creates a new one. */
@@ -300,12 +301,7 @@ internal class ShadowBitmaps {
 
   /** Bytes held by these bitmaps: both buffers and the kept small round rect (`Bitmap.allocationByteCount`). */
   val byteCount: Long
-    get() {
-      var bytes = 0L
-      for (b in slots) if (b != null) bytes += b.allocationByteCount
-      nineMask?.let { bytes += it.allocationByteCount }
-      return bytes
-    }
+    get() = slots.sumOf { it?.allocationByteCount?.toLong() ?: 0L } + (nineMask?.allocationByteCount ?: 0)
 
   /**
    * Where the last build's bitmap lies in Compose's own bitmap, in whole px: its top-left pixel is Compose's pixel
@@ -341,18 +337,17 @@ internal class ShadowBitmaps {
     isRebuild = slots[0] != null || slots[1] != null
     if (preserveCurrent && slots[current] != null) current = 1 - current
     val old = slots[current]
-    if (old != null) {
-      if (old.width == w && old.height == h) return old
-      if (old.allocationByteCount >= w * h) {
-        old.reconfigure(w, h, Bitmap.Config.ALPHA_8)
-        return old
+    return when {
+      old != null && old.width == w && old.height == h -> old
+      old != null && old.allocationByteCount >= w * h -> old.apply { reconfigure(w, h, Bitmap.Config.ALPHA_8) }
+      else -> {
+        allocationCount++
+        newA8(w, h).also {
+          // A new bitmap is zeroed; the reconfigure keeps its bytes.
+          if (it.width != w || it.height != h) it.reconfigure(w, h, Bitmap.Config.ALPHA_8)
+          slots[current] = it
+        }
       }
-    }
-    allocationCount++
-    return newA8(w, h).also {
-      // A new bitmap is zeroed; the reconfigure keeps its bytes.
-      if (it.width != w || it.height != h) it.reconfigure(w, h, Bitmap.Config.ALPHA_8)
-      slots[current] = it
     }
   }
 

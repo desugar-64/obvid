@@ -142,18 +142,22 @@ internal class SkiaRoute(private val bounds: RectF) {
    */
   private fun ensureIntermediate(w: Int, h: Int): ImageBitmap {
     val current = intermediate
-    if (current != null && current.width == w && current.height == h) return checkNotNull(intermediateImage)
-    if (current != null && current.allocationByteCount >= w * h) {
-      current.reconfigure(w, h, Bitmap.Config.ALPHA_8)
-      intermediateCanvas.setBitmap(current)
-      return checkNotNull(intermediateImage)
+    return when {
+      current != null && current.width == w && current.height == h -> checkNotNull(intermediateImage)
+      current != null && current.allocationByteCount >= w * h -> {
+        current.reconfigure(w, h, Bitmap.Config.ALPHA_8)
+        intermediateCanvas.setBitmap(current)
+        checkNotNull(intermediateImage)
+      }
+      else -> {
+        val next = newA8(w, h)
+        if (next.width != w || next.height != h) next.reconfigure(w, h, Bitmap.Config.ALPHA_8)
+        intermediateCanvas.setBitmap(next)
+        current?.recycle()
+        intermediate = next
+        next.asImageBitmap().also { intermediateImage = it }
+      }
     }
-    val next = newA8(w, h)
-    if (next.width != w || next.height != h) next.reconfigure(w, h, Bitmap.Config.ALPHA_8)
-    intermediateCanvas.setBitmap(next)
-    current?.recycle()
-    intermediate = next
-    return next.asImageBitmap().also { intermediateImage = it }
   }
 
   /**

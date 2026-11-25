@@ -212,49 +212,63 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
 
     // createOuterShadowBitmap(path): translated by radius + spread only for a positive spread.
     val t = if (spread > 0f) radius + spread else radius
-    // Each sets the route when it takes the build, and prepares the bitmap ([DropArea.prepare]) once it has. A
-    // canonical frame without spread (one fill draw) is decided by Skia's nested-rects test on the moved points; any
-    // other path that may be nested rects is left to Skia, which blurs the fill draw with its rect nine-patch.
-    if (path != null && radius > 0f) {
-      val local = path.asAndroidPath()
+    // Each sets the route when it takes the build, and prepares the bitmap ([DropArea.prepare]) once it has.
+    val taken =
+      when {
+        !(radius > 0f) -> false
+        path != null -> buildPath(target, path.asAndroidPath(), radius, spread, t, full)
+        else -> buildRoundRect(target, shadowWidth, shadowHeight, radius)
+      }
+    if (!taken) {
+      route = Route.Skia
       if (full) {
-        stroke.drawBounds(local, spread, bounds)
-        area.setFull(bounds, t, native.fullMargin(radius))
+        if (path != null) {
+          stroke.drawBounds(path.asAndroidPath(), spread, bounds)
+          area.setFull(bounds, t, native.skiaMargin(radius))
+        } else {
+          roundRectBounds(radius, shadowWidth, shadowHeight)
+          area.setFull(bounds, 0f, native.skiaMargin(radius))
+        }
       } else {
         area.setCompose()
       }
-      val tx = area.moved(t, area.x)
-      val ty = area.moved(t, area.y)
-      val frame = if (spread <= 0f && target.isFrame) nested.test(target, tx, ty) else NestedRects.UNKNOWN
-      val taken =
-        when (frame) {
-          NestedRects.NESTED ->
-            when (val plan = nested.plan(radius)) {
-              ObvidNative.PLAN_SKIA -> false
-              ObvidNative.PLAN_RECTS_MASK -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
-              else -> buildNineRects(area.prepare(), area.width, area.height, radius, plan, inverted = false)
-            }
-          NestedRects.NOT_NESTED -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
-          else -> !target.nestedRects && buildMask(local, radius, spread, tx, ty)
-        }
-      if (taken) return
+      skia.build(area.prepare(), area, path, target.cornerRadius, shadowWidth, shadowHeight, radius, spread, t)
     }
-    if (path == null && radius > 0f && buildRoundRect(target, shadowWidth, shadowHeight, radius)) {
-      return
-    }
-    route = Route.Skia
+  }
+
+  /**
+   * The drop shadow of [local] (radius > 0) on Obvid's routes, drawn under Compose's translate [t]; sets the route and
+   * returns true when one takes it. A canonical frame without spread (one fill draw) is decided by Skia's nested-rects
+   * test on the moved points; any other path that may be nested rects is left to Skia, which blurs the fill draw with
+   * its rect nine-patch.
+   */
+  private fun buildPath(
+    target: ShadowBitmaps,
+    local: android.graphics.Path,
+    radius: Float,
+    spread: Float,
+    t: Float,
+    full: Boolean,
+  ): Boolean {
     if (full) {
-      if (path != null) {
-        stroke.drawBounds(path.asAndroidPath(), spread, bounds)
-        area.setFull(bounds, t, native.skiaMargin(radius))
-      } else {
-        roundRectBounds(radius, shadowWidth, shadowHeight)
-        area.setFull(bounds, 0f, native.skiaMargin(radius))
-      }
+      stroke.drawBounds(local, spread, bounds)
+      area.setFull(bounds, t, native.fullMargin(radius))
     } else {
       area.setCompose()
     }
-    skia.build(area.prepare(), area, path, target.cornerRadius, shadowWidth, shadowHeight, radius, spread, t)
+    val tx = area.moved(t, area.x)
+    val ty = area.moved(t, area.y)
+    val frame = if (spread <= 0f && target.isFrame) nested.test(target.framePoints, tx, ty) else NestedRects.Answer.Unknown
+    return when (frame) {
+      NestedRects.Answer.Nested ->
+        when (val plan = nested.plan(radius)) {
+          ObvidNative.PLAN_SKIA -> false
+          ObvidNative.PLAN_RECTS_MASK -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
+          else -> buildNineRects(area.prepare(), area.width, area.height, radius, plan, inverted = false)
+        }
+      NestedRects.Answer.NotNested -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
+      else -> !target.nestedRects && buildMask(local, radius, spread, tx, ty)
+    }
   }
 
   /** The bounds of Compose's round-rect draw (`createOuterShadowBitmap`'s rect, sorted) into [bounds]. */
@@ -393,55 +407,89 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     require(w > 0 && h > 0) { "empty shadow bitmap ${w}x$h" }
     target.setWindow(0, 0, w, h)
     val bitmap = target.prepare(w, h, preserveCurrent)
-    if (radius > 0f) {
-      // Sets the route when it takes the build.
-      val taken =
-        when {
-          path == null -> buildInnerRoundRect(target, bitmap, size, w, h, radius, spread, offsetX, offsetY)
-          image != null -> buildInnerPathSpread(bitmap, w, h, radius, offsetX, offsetY)
-          // A canonical frame is decided by Skia's nested-rects test on the moved points; any other path that may be
-          // nested rects is left to Skia, which blurs the path draw with its rect nine-patch.
-          else ->
-            when (if (target.isFrame) nested.test(target, offsetX, offsetY) else NestedRects.UNKNOWN) {
-              NestedRects.NESTED ->
-                when (val plan = nested.plan(radius)) {
-                  ObvidNative.PLAN_SKIA -> false
-                  ObvidNative.PLAN_RECTS_MASK -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
-                  else -> buildNineRects(bitmap, w, h, radius, plan, inverted = true)
-                }
-              NestedRects.NOT_NESTED -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
-              else -> !target.nestedRects && buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY)
-            }
-        }
-      if (taken) {
-        // The nine-patch routes have written the inverted bitmap themselves; the round rect's also returned its hole.
-        // The others' hole is grown from the component's centre moved by half the offset (the middle of the overlap of
-        // the shape and the shape moved by the offset, for a symmetric shape). The frame's nine-patch gives none: its
-        // 0s lie in the frame's band, not around a point known in advance.
-        val hole =
-          when (route) {
-            Route.NinePatch -> ninePatch.hole
-            Route.NineRects -> 0L
-            else ->
-              native.invertWithHole(
-                bitmap, w, h, floor((size.width + offsetX) / 2f).toInt(), floor((size.height + offsetY) / 2f).toInt(),
-              )
-          }
-        // Bands only for an outline whose pixels do not depend on the clip it is drawn under: a rect, a round rect
-        // (analytic on the GPU) or a convex path (Ganesh's convex path renderer). A concave path's renderer is chosen
-        // by its clipped device bounds (an atlas for a small clipped path, a tessellation for a large one), whose
-        // anti-aliased edges differ by a few levels. An inverse fill (convex or not) covers the whole clip, past any
-        // band.
-        if (hole > 0L && (path == null || (path.isConvex && !path.asAndroidPath().isInverseFillType))) {
-          // A path may reach past the component: the bands must cover all of it.
-          @Suppress("DEPRECATION") if (path != null) path.asAndroidPath().computeBounds(bounds, true)
-          target.setBands(hole, size.width, size.height, if (path != null) bounds else null)
-        }
-        return
-      }
+    // Sets the route when it takes the build.
+    val taken =
+      radius > 0f && buildInnerNative(target, path, image != null, bitmap, size, w, h, radius, spread, offsetX, offsetY)
+    if (taken) {
+      invertAndBand(target, path, bitmap, size, w, h, offsetX, offsetY)
+    } else {
+      route = Route.Skia
+      skia.buildInner(bitmap, path, image, target.cornerRadius, size, w, h, radius, spread, offsetX, offsetY)
     }
-    route = Route.Skia
-    skia.buildInner(bitmap, path, image, target.cornerRadius, size, w, h, radius, spread, offsetX, offsetY)
+  }
+
+  /**
+   * The inner shadow (radius > 0) on Obvid's routes, B written into [bitmap] (inverted already by the nine-patch
+   * routes); sets the route and returns true when one takes it. [spreadImage]: the path + spread intermediate exists.
+   */
+  private fun buildInnerNative(
+    target: ShadowBitmaps,
+    path: Path?,
+    spreadImage: Boolean,
+    bitmap: Bitmap,
+    size: Size,
+    w: Int,
+    h: Int,
+    radius: Float,
+    spread: Float,
+    offsetX: Float,
+    offsetY: Float,
+  ): Boolean =
+    when {
+      path == null -> buildInnerRoundRect(target, bitmap, size, w, h, radius, spread, offsetX, offsetY)
+      spreadImage -> buildInnerPathSpread(bitmap, w, h, radius, offsetX, offsetY)
+      // A canonical frame is decided by Skia's nested-rects test on the moved points; any other path that may be
+      // nested rects is left to Skia, which blurs the path draw with its rect nine-patch.
+      else ->
+        when (if (target.isFrame) nested.test(target.framePoints, offsetX, offsetY) else NestedRects.Answer.Unknown) {
+          NestedRects.Answer.Nested ->
+            when (val plan = nested.plan(radius)) {
+              ObvidNative.PLAN_SKIA -> false
+              ObvidNative.PLAN_RECTS_MASK -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
+              else -> buildNineRects(bitmap, w, h, radius, plan, inverted = true)
+            }
+          NestedRects.Answer.NotNested -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
+          else -> !target.nestedRects && buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY)
+        }
+    }
+
+  /**
+   * After a native inner route: `255 − B` over [bitmap] unless the route wrote it inverted, then [target]'s bands from
+   * the bitmap's hole.
+   */
+  private fun invertAndBand(
+    target: ShadowBitmaps,
+    path: Path?,
+    bitmap: Bitmap,
+    size: Size,
+    w: Int,
+    h: Int,
+    offsetX: Float,
+    offsetY: Float,
+  ) {
+    // The nine-patch routes have written the inverted bitmap themselves; the round rect's also returned its hole.
+    // The others' hole is grown from the component's centre moved by half the offset (the middle of the overlap of
+    // the shape and the shape moved by the offset, for a symmetric shape). The frame's nine-patch gives none: its
+    // 0s lie in the frame's band, not around a point known in advance.
+    val hole =
+      when (route) {
+        Route.NinePatch -> ninePatch.hole
+        Route.NineRects -> 0L
+        else ->
+          native.invertWithHole(
+            bitmap, w, h, floor((size.width + offsetX) / 2f).toInt(), floor((size.height + offsetY) / 2f).toInt(),
+          )
+      }
+    // Bands only for an outline whose pixels do not depend on the clip it is drawn under: a rect, a round rect
+    // (analytic on the GPU) or a convex path (Ganesh's convex path renderer). A concave path's renderer is chosen
+    // by its clipped device bounds (an atlas for a small clipped path, a tessellation for a large one), whose
+    // anti-aliased edges differ by a few levels. An inverse fill (convex or not) covers the whole clip, past any
+    // band.
+    if (hole > 0L && (path == null || (path.isConvex && !path.asAndroidPath().isInverseFillType))) {
+      // A path may reach past the component: the bands must cover all of it.
+      @Suppress("DEPRECATION") if (path != null) path.asAndroidPath().computeBounds(bounds, true)
+      target.setBands(hole, size.width, size.height, if (path != null) bounds else null)
+    }
   }
 
   /** The inner mask route of [path] ([MaskRoute.setInnerPath]); false leaves the build to the Skia route. */

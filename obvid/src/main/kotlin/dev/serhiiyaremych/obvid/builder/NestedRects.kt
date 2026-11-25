@@ -14,53 +14,64 @@ internal class NestedRects {
   /** The canonical frame's points moved by the last [test]'s translate (x, y pairs). */
   private val moved = FloatArray(16)
 
-  /** The outer and the inner rect of the last [test] that answered [NESTED] (LTRB each). */
+  /** The outer and the inner rect of the last [test] that answered [Answer.Nested] (LTRB each). */
   val rects = FloatArray(8)
 
+  /** [test]'s answers. */
+  enum class Answer {
+    /**
+     * A point is not finite, or a contour is not an exact axis-aligned rect (`trivial_rect` fails: a zero-length side,
+     * collinear points, an edge off axis). Skia's general rect loop may still take such a contour for a rect, so the
+     * build decides as for any other path ([ShadowBitmaps.nestedRects]).
+     */
+    Unknown,
+
+    /** Both contours are rects and one contains the other: [rects] holds the outer and the inner rect. */
+    Nested,
+
+    /**
+     * Both contours are rects and neither contains the other: Skia's test fails, and `isRect` too (it rejects a
+     * second contour), so Skia blurs the path's whole mask (the mask route).
+     */
+    NotNested,
+  }
+
   /**
-   * Skia's nested-rects test (`SkPathPriv::IsNestedFillRects`) on [bitmaps]' canonical frame ([ShadowBitmaps.isFrame])
+   * Skia's nested-rects test (`SkPathPriv::IsNestedFillRects`) on a canonical frame's [points] ([ShadowBitmaps.isFrame])
    * moved by Compose's translate ([tx], [ty]): each point `p + t` in float, as the CTM maps it.
-   *
-   * Skia runs `IsRectContour` on the whole path for the first contour (`trivial_rect` needs exactly one contour, so its
-   * general loop runs) and on the rest for the second (`trivial_rect` first). For a contour of move, three lines and a
-   * close whose side vectors pass `trivial_rect`'s test (finite, the first with exactly one zero component, each next
-   * one orthogonal to it in the other dimension), both give the same answer: four non-zero sides alternating
-   * horizontal and vertical close a rect with opposite sides in opposite directions, which the general loop accepts
-   * with its corners at the second and fourth point (`bounds(firstCorner, thirdCorner)`), the same rect as
-   * `trivial_rect`'s sorted first and third point. Then `SkRect::contains` either way, the first contour first.
-   * - [NESTED]: both contours pass and one contains the other; [rects] holds the outer and the inner rect.
-   * - [NOT_NESTED]: both pass, neither contains the other: Skia's test fails, and `isRect` too (a second contour after a
-   *   closed rect is rejected), so Skia blurs the path's whole mask (the mask route).
-   * - [UNKNOWN]: a point is not finite or a contour fails `trivial_rect`'s test (a zero-length side, collinear points,
-   *   an edge off axis). Skia's general loop may still take such a contour for a rect, so the build decides as for any
-   *   other path ([ShadowBitmaps.nestedRects]).
    */
-  fun test(bitmaps: ShadowBitmaps, tx: Float, ty: Float): Int {
-    val p = bitmaps.framePoints
+  fun test(points: FloatArray, tx: Float, ty: Float): Answer {
     val m = moved
-    for (i in 0 until 8) {
-      m[2 * i] = p[2 * i] + tx
-      m[2 * i + 1] = p[2 * i + 1] + ty
-      if (!m[2 * i].isFinite() || !m[2 * i + 1].isFinite()) return UNKNOWN
+    for (i in m.indices) m[i] = points[i] + if ((i and 1) == 0) tx else ty
+    val bothRects = m.all { it.isFinite() } && trivialRect(m, 0) && trivialRect(m, 8)
+    return if (bothRects) nestedOrNot(m) else Answer.Unknown
+  }
+
+  /** [test] for two contours that pass `trivial_rect`'s test: [Answer.Nested] (with [rects] set) or [Answer.NotNested]. */
+  private fun nestedOrNot(m: FloatArray): Answer {
+    // Each contour's rect as Skia computes it. Skia tests the first contour with its general loop (bounds of the second
+    // and fourth point) and the second with `trivial_rect` (the sorted first and third point). For an exact rect both
+    // give the same edges up to the sign of a zero, so each keeps Skia's choice.
+    val firstL = skMin(m[2], m[6])
+    val firstT = skMin(m[3], m[7])
+    val firstR = skMax(m[2], m[6])
+    val firstB = skMax(m[3], m[7])
+    val secondL = skMin(m[8], m[12])
+    val secondT = skMin(m[9], m[13])
+    val secondR = skMax(m[8], m[12])
+    val secondB = skMax(m[9], m[13])
+    // SkRect::contains both ways, the first contour as the outer one first.
+    return when {
+      contains(firstL, firstT, firstR, firstB, secondL, secondT, secondR, secondB) -> {
+        rects.setRects(firstL, firstT, firstR, firstB, secondL, secondT, secondR, secondB)
+        Answer.Nested
+      }
+      contains(secondL, secondT, secondR, secondB, firstL, firstT, firstR, firstB) -> {
+        rects.setRects(secondL, secondT, secondR, secondB, firstL, firstT, firstR, firstB)
+        Answer.Nested
+      }
+      else -> Answer.NotNested
     }
-    if (!trivialRect(m, 0) || !trivialRect(m, 8)) return UNKNOWN
-    // First contour: the general loop's bounds of its second and fourth point (SkRect::set: std::min / std::max).
-    val al = skMin(m[2], m[6])
-    val at = skMin(m[3], m[7])
-    val ar = skMax(m[2], m[6])
-    val ab = skMax(m[3], m[7])
-    // Second contour: trivial_rect's MakeLTRB(first point, third point).makeSorted().
-    val bl = skMin(m[8], m[12])
-    val bt = skMin(m[9], m[13])
-    val br = skMax(m[8], m[12])
-    val bb = skMax(m[9], m[13])
-    val r = rects
-    when {
-      contains(al, at, ar, ab, bl, bt, br, bb) -> r.setRects(al, at, ar, ab, bl, bt, br, bb)
-      contains(bl, bt, br, bb, al, at, ar, ab) -> r.setRects(bl, bt, br, bb, al, at, ar, ab)
-      else -> return NOT_NESTED
-    }
-    return NESTED
   }
 
   /**
@@ -81,13 +92,6 @@ internal class NestedRects {
   fun plan(radius: Float): Long {
     val r = rects
     return ObvidNative.builderPlanRects(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], radius)
-  }
-
-  companion object {
-    /** [test]'s answers. */
-    const val UNKNOWN = 0
-    const val NESTED = 1
-    const val NOT_NESTED = 2
   }
 }
 

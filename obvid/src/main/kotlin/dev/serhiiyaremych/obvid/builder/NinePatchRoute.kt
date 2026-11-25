@@ -83,52 +83,74 @@ internal class NinePatchRoute(private val native: NativeBuilder, private val mas
           check(status == 0) { "builderNinePlace failed: $status" }
         }
         masks.countReuse(bitmaps, shared = published != null)
-        return
-      }
-      val rw = ObvidNative.planRectWidth(plan)
-      val rh = ObvidNative.planRectHeight(plan)
-      val sw = ceil(rw).toInt()
-      val sh = ceil(rh).toInt()
-      val maskBitmap = mask.ensure(sw, sh)
-      val maskCanvas = mask.canvas
-      maskCanvas.save()
-      maskCanvas.clipRect(0, 0, sw, sh)
-      maskCanvas.drawColor(0, PorterDuff.Mode.CLEAR)
-      maskCanvas.drawRoundRect(0f, 0f, rw, rh, rx, ry, mask.paint)
-      maskCanvas.restore()
-      // The plan's border is the radius' border.
-      native.updateBorder(radius)
-      val kw = sw + 2 * native.border
-      val kh = sh + 2 * native.border
-      if (rebuild) {
-        val allocations = bitmaps.nineAllocationCount
-        val keep = bitmaps.nineMaskFor(kw, kh)
-        if (bitmaps.nineAllocationCount != allocations) masks.countAllocation()
-        nineKeep(maskBitmap, keep, l, t, r, b, rx, ry, radius, target, w, h, inverted)
-        bitmaps.keepNine(plan, rx, ry, radius)
-      } else if (mayPublish && masks.canPublish(kw, kh)) {
-        val allocated = masks.allocate(kw, kh)
-        try {
-          nineKeep(maskBitmap, allocated.bitmap, l, t, r, b, rx, ry, radius, target, w, h, inverted)
-        } catch (e: Throwable) {
-          allocated.bitmap.recycle()
-          throw e
-        }
-        masks.publish(allocated, plan, rx, ry, radius)
-      } else if (inverted) {
-        // The bitmap is exactly the used size: the clear rect is the used rect.
-        hole =
-          ObvidNative.builderNineInvertedHole(
-            native.handle, maskBitmap, ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius, target, w, h, w, h,
-          )
-        check(hole >= 0L) { "builderNineInvertedHole failed: $hole" }
       } else {
-        val status =
-          ObvidNative.builderNine(native.handle, maskBitmap, ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius, target, w, h, w, h)
-        check(status == 0) { "builderNine failed: $status" }
+        blurNew(bitmaps, masks, mayPublish, rebuild, target, w, h, radius, l, t, r, b, rx, ry, plan, inverted)
       }
-      masks.countBlur(bitmaps)
     }
+  }
+
+  /** [build] without a kept mask: the small round rect drawn, blurred and stretched, kept or published when allowed. */
+  private fun blurNew(
+    bitmaps: ShadowBitmaps,
+    masks: NineMaskCache,
+    mayPublish: Boolean,
+    rebuild: Boolean,
+    target: Bitmap,
+    w: Int,
+    h: Int,
+    radius: Float,
+    l: Float,
+    t: Float,
+    r: Float,
+    b: Float,
+    rx: Float,
+    ry: Float,
+    plan: Long,
+    inverted: Boolean,
+  ) {
+    val rw = ObvidNative.planRectWidth(plan)
+    val rh = ObvidNative.planRectHeight(plan)
+    val sw = ceil(rw).toInt()
+    val sh = ceil(rh).toInt()
+    val maskBitmap = mask.ensure(sw, sh)
+    val maskCanvas = mask.canvas
+    maskCanvas.save()
+    maskCanvas.clipRect(0, 0, sw, sh)
+    maskCanvas.drawColor(0, PorterDuff.Mode.CLEAR)
+    maskCanvas.drawRoundRect(0f, 0f, rw, rh, rx, ry, mask.paint)
+    maskCanvas.restore()
+    // The plan's border is the radius' border.
+    native.updateBorder(radius)
+    val kw = sw + 2 * native.border
+    val kh = sh + 2 * native.border
+    if (rebuild) {
+      val allocations = bitmaps.nineAllocationCount
+      val keep = bitmaps.nineMaskFor(kw, kh)
+      if (bitmaps.nineAllocationCount != allocations) masks.countAllocation()
+      nineKeep(maskBitmap, keep, l, t, r, b, rx, ry, radius, target, w, h, inverted)
+      bitmaps.keepNine(plan, rx, ry, radius)
+    } else if (mayPublish && masks.canPublish(kw, kh)) {
+      val allocated = masks.allocate(kw, kh)
+      try {
+        nineKeep(maskBitmap, allocated.bitmap, l, t, r, b, rx, ry, radius, target, w, h, inverted)
+      } catch (e: Throwable) {
+        allocated.bitmap.recycle()
+        throw e
+      }
+      masks.publish(allocated, plan, rx, ry, radius)
+    } else if (inverted) {
+      // The bitmap is exactly the used size: the clear rect is the used rect.
+      hole =
+        ObvidNative.builderNineInvertedHole(
+          native.handle, maskBitmap, ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius, target, w, h, w, h,
+        )
+      check(hole >= 0L) { "builderNineInvertedHole failed: $hole" }
+    } else {
+      val status =
+        ObvidNative.builderNine(native.handle, maskBitmap, ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius, target, w, h, w, h)
+      check(status == 0) { "builderNine failed: $status" }
+    }
+    masks.countBlur(bitmaps)
   }
 
   /**

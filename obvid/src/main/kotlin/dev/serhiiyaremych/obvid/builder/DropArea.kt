@@ -72,14 +72,14 @@ internal class DropArea {
    * round-rect draw), with [margin] px around it: per axis the whole-px translate and the size ([fullAxis]).
    */
   fun setFull(local: RectF, t: Float, margin: Int) {
-    if (!(local.left.isFinite() && local.top.isFinite() && local.right.isFinite() && local.bottom.isFinite())) {
+    if (local.left.isFinite() && local.top.isFinite() && local.right.isFinite() && local.bottom.isFinite()) {
+      x = fullAxis(local.left, local.right, t, margin, composeWidth)
+      width = fullAxisSize
+      y = fullAxis(local.top, local.bottom, t, margin, composeHeight)
+      height = fullAxisSize
+    } else {
       setCompose()
-      return
     }
-    x = fullAxis(local.left, local.right, t, margin, composeWidth)
-    width = fullAxisSize
-    y = fullAxis(local.top, local.bottom, t, margin, composeHeight)
-    height = fullAxisSize
   }
 
   /**

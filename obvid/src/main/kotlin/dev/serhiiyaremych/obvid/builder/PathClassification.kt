@@ -34,26 +34,26 @@ internal fun readFrame(path: Path, points: FloatArray, out: FloatArray): Boolean
   val iterator = path.iterator(PathIterator.ConicEvaluation.AsConic, 0.25f)
   var verb = 0
   var n = 0
-  while (iterator.hasNext()) {
+  var matches = true
+  while (matches && iterator.hasNext()) {
     val type = iterator.next(points, 0)
     if (type == PathSegment.Type.Done) break
-    if (verb == FRAME_VERBS.size || type != FRAME_VERBS[verb++]) return false
-    when (type) {
-      PathSegment.Type.Move -> {
+    when {
+      verb == FRAME_VERBS.size || type != FRAME_VERBS[verb++] -> matches = false
+      type == PathSegment.Type.Move -> {
         out[2 * n] = points[0]
         out[2 * n + 1] = points[1]
         n++
       }
-      PathSegment.Type.Line -> {
+      type == PathSegment.Type.Line -> {
         // The segment's start is the previous point; its end is the next one.
         out[2 * n] = points[2]
         out[2 * n + 1] = points[3]
         n++
       }
-      else -> Unit
     }
   }
-  return verb == FRAME_VERBS.size
+  return matches && verb == FRAME_VERBS.size
 }
 
 /**
@@ -73,38 +73,46 @@ internal fun mayBeNestedRects(path: Path, points: FloatArray): Boolean {
   var startY = 0f
   var x = 0f
   var y = 0f
-  while (iterator.hasNext()) {
+  var ok = true
+  while (ok && iterator.hasNext()) {
     when (iterator.next(points, 0)) {
       PathSegment.Type.Move -> {
-        if (hasEdge && !axisAligned(x, y, startX, startY)) return false
-        hasEdge = false
-        startX = points[0]
-        startY = points[1]
-        x = startX
-        y = startY
+        if (hasEdge && !axisAligned(x, y, startX, startY)) {
+          ok = false
+        } else {
+          hasEdge = false
+          startX = points[0]
+          startY = points[1]
+          x = startX
+          y = startY
+        }
       }
       PathSegment.Type.Line -> {
         // The segment's start, then its end.
-        if (!axisAligned(points[0], points[1], points[2], points[3])) return false
-        if (!hasEdge) {
+        if (!axisAligned(points[0], points[1], points[2], points[3])) {
+          ok = false
+        } else if (!hasEdge) {
           hasEdge = true
-          if (++contours > 2) return false
+          ok = ++contours <= 2
         }
         x = points[2]
         y = points[3]
       }
       PathSegment.Type.Close -> {
-        if (!axisAligned(x, y, startX, startY)) return false
-        // A segment after a close without a move starts a new contour at this contour's start.
-        hasEdge = false
-        x = startX
-        y = startY
+        if (!axisAligned(x, y, startX, startY)) {
+          ok = false
+        } else {
+          // A segment after a close without a move starts a new contour at this contour's start.
+          hasEdge = false
+          x = startX
+          y = startY
+        }
       }
       PathSegment.Type.Done -> break
-      else -> return false
+      else -> ok = false
     }
   }
-  return contours == 2 && !(hasEdge && !axisAligned(x, y, startX, startY))
+  return ok && contours == 2 && !(hasEdge && !axisAligned(x, y, startX, startY))
 }
 
 /**
@@ -129,7 +137,8 @@ internal fun mayBeStrokeRects(stroke: Path, points: FloatArray): Boolean {
   // The current contour's direction runs and the last run's direction (0 +x, 1 +y, 2 −x, 3 −y; −1: none yet).
   var runs = 0
   var direction = -1
-  while (iterator.hasNext()) {
+  var ok = true
+  while (ok && iterator.hasNext()) {
     when (iterator.next(points, 0)) {
       PathSegment.Type.Move,
       PathSegment.Type.Close -> {
@@ -140,21 +149,20 @@ internal fun mayBeStrokeRects(stroke: Path, points: FloatArray): Boolean {
         // The segment's start, then its end.
         val dx = points[2] - points[0]
         val dy = points[3] - points[1]
-        if (!axisAligned(points[0], points[1], points[2], points[3])) return false
-        if (!nearPoint(points[0], points[1], points[2], points[3])) {
+        if (!axisAligned(points[0], points[1], points[2], points[3])) {
+          ok = false
+        } else if (!nearPoint(points[0], points[1], points[2], points[3])) {
           val d = if (abs(dx) >= abs(dy)) (if (dx > 0f) 0 else 2) else (if (dy > 0f) 1 else 3)
           if (d != direction) {
-            if (runs == 0 && ++contours > 2) return false
-            if (++runs > 5) return false
-            direction = d
+            if ((runs == 0 && ++contours > 2) || ++runs > 5) ok = false else direction = d
           }
         }
       }
       PathSegment.Type.Done -> break
-      else -> return false
+      else -> ok = false
     }
   }
-  return true
+  return ok
 }
 
 /**
