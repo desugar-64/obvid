@@ -8,8 +8,8 @@ except for the files listed below, which carry their own license headers.
 Skia
 ----
 
-The blur arithmetic and the nine-patch geometry in the following files are
-ports of Skia (https://skia.org), Copyright Google LLC and
+The blur arithmetic, the nine-patch geometry and the rect contour test in the
+following files are ports of Skia (https://skia.org), Copyright Google LLC and
 The Android Open Source Project, licensed under the BSD 3-Clause License
 (see LICENSES/Skia-BSD-3-Clause.txt). These files remain under that license:
 
@@ -23,6 +23,8 @@ The Android Open Source Project, licensed under the BSD 3-Clause License
   obvid/rust/src/shadow/rects.rs        SkBlurMaskFilterImpl.cpp
   obvid/rust/src/shadow/rects_tests.rs  SkBlurMaskFilterImpl.cpp,
                                         SkMaskFilterBase.cpp (test-only port)
+  obvid/src/main/kotlin/dev/serhiiyaremych/obvid/builder/SkiaRects.kt
+                                        SkPathPriv.cpp
 
 The NEON blur (obvid/rust/src/blur.rs, obvid/rust/src/blur/passes.rs,
 obvid/rust/src/neon/box3.rs) is our own code under Apache-2.0 that computes

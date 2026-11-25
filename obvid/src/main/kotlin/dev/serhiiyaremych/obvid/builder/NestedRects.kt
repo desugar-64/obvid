@@ -3,19 +3,27 @@
 
 package dev.serhiiyaremych.obvid.builder
 
+import android.graphics.RectF
 import dev.serhiiyaremych.obvid.ObvidNative
 
 /**
  * Skia's nested-rects test on a canonical frame ([ShadowBitmaps.isFrame]) moved by Compose's translate ([test]): the
- * moved points ([moved]) and the nested rects Skia finds in them ([rects]: outer, inner; LTRB), kept for the routes
+ * moved points ([moved]) and the nested rects Skia finds in them ([outer], [inner]), kept for the routes
  * that draw the frame ([setMovedPath], [plan], [NineRectsRoute]).
  */
 internal class NestedRects {
   /** The canonical frame's points moved by the last [test]'s translate (x, y pairs). */
   private val moved = FloatArray(16)
 
-  /** The outer and the inner rect of the last [test] that answered [Answer.Nested] (LTRB each). */
-  val rects = FloatArray(8)
+  /** The outer rect of the last [test] that answered [Answer.Nested]. */
+  val outer = RectF()
+
+  /** The inner rect of the last [test] that answered [Answer.Nested]. */
+  val inner = RectF()
+
+  // Each contour's rect, scratch of [nestedOrNot].
+  private val first = RectF()
+  private val second = RectF()
 
   /** [test]'s answers. */
   enum class Answer {
@@ -26,7 +34,7 @@ internal class NestedRects {
      */
     Unknown,
 
-    /** Both contours are rects and one contains the other: [rects] holds the outer and the inner rect. */
+    /** Both contours are rects and one contains the other: [outer] and [inner] hold them. */
     Nested,
 
     /**
@@ -47,27 +55,30 @@ internal class NestedRects {
     return if (bothRects) nestedOrNot(m) else Answer.Unknown
   }
 
-  /** [test] for two contours that pass `trivial_rect`'s test: [Answer.Nested] (with [rects] set) or [Answer.NotNested]. */
+  /**
+   * [test] for two contours that pass `trivial_rect`'s test: [Answer.Nested] (with [outer] and [inner] set) or
+   * [Answer.NotNested].
+   *
+   * Each contour's rect is the bounds of two opposite corners, as Skia takes them: the second and fourth point for the
+   * first contour (`IsRectContour`'s general loop), the first and third for the second (`trivial_rect`). Its sides
+   * alternate horizontal and vertical with non-zero length, so those corners differ on both axes: `RectF.sort` gives
+   * Skia's `std::min` / `std::max` edges, and both rects are non-empty, so `RectF.contains` is `SkRect::contains`. Skia
+   * tests the first contour as the outer one first.
+   */
   private fun nestedOrNot(m: FloatArray): Answer {
-    // Each contour's rect as Skia computes it. Skia tests the first contour with its general loop (bounds of the second
-    // and fourth point) and the second with `trivial_rect` (the sorted first and third point). For an exact rect both
-    // give the same edges up to the sign of a zero, so each keeps Skia's choice.
-    val firstL = skMin(m[2], m[6])
-    val firstT = skMin(m[3], m[7])
-    val firstR = skMax(m[2], m[6])
-    val firstB = skMax(m[3], m[7])
-    val secondL = skMin(m[8], m[12])
-    val secondT = skMin(m[9], m[13])
-    val secondR = skMax(m[8], m[12])
-    val secondB = skMax(m[9], m[13])
-    // SkRect::contains both ways, the first contour as the outer one first.
+    first.set(m[2], m[3], m[6], m[7])
+    first.sort()
+    second.set(m[8], m[9], m[12], m[13])
+    second.sort()
     return when {
-      contains(firstL, firstT, firstR, firstB, secondL, secondT, secondR, secondB) -> {
-        rects.setRects(firstL, firstT, firstR, firstB, secondL, secondT, secondR, secondB)
+      first.contains(second) -> {
+        outer.set(first)
+        inner.set(second)
         Answer.Nested
       }
-      contains(secondL, secondT, secondR, secondB, firstL, firstT, firstR, firstB) -> {
-        rects.setRects(secondL, secondT, secondR, secondB, firstL, firstT, firstR, firstB)
+      second.contains(first) -> {
+        outer.set(second)
+        inner.set(first)
         Answer.Nested
       }
       else -> Answer.NotNested
@@ -88,48 +99,10 @@ internal class NestedRects {
     path.fillType = fillType
   }
 
-  /** `ObvidNative.builderPlanRects` for [rects] blurred with [radius]. */
-  fun plan(radius: Float): Long {
-    val r = rects
-    return ObvidNative.builderPlanRects(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], radius)
-  }
+  /** `ObvidNative.builderPlanRects` for [outer] and [inner] blurred with [radius]. */
+  fun plan(radius: Float): Long =
+    ObvidNative.builderPlanRects(outer.left, outer.top, outer.right, outer.bottom, inner.left, inner.top, inner.right, inner.bottom, radius)
 }
-
-/**
- * `trivial_rect`'s test (SkPathPriv.cpp) on the contour of the 4 points at [base] in [m] (x, y pairs): the side vectors
- * `v0 = p1 − p0`, `v1 = p2 − p1`, `v2 = p3 − p2`, `v3 = p0 − p3` in float; `v0` has exactly one zero component and each
- * next vector is orthogonal to the one before in the other dimension.
- */
-private fun trivialRect(m: FloatArray, base: Int): Boolean {
-  val v0x = m[base + 2] - m[base]
-  val v0y = m[base + 3] - m[base + 1]
-  val v1x = m[base + 4] - m[base + 2]
-  val v1y = m[base + 5] - m[base + 3]
-  val v2x = m[base + 6] - m[base + 4]
-  val v2y = m[base + 7] - m[base + 5]
-  val v3x = m[base] - m[base + 6]
-  val v3y = m[base + 1] - m[base + 7]
-  return ((v0x == 0f) xor (v0y == 0f)) &&
-    orthogonal(v0x, v0y, v1x, v1y) &&
-    orthogonal(v1x, v1y, v2x, v2y) &&
-    orthogonal(v2x, v2y, v3x, v3y)
-}
-
-/** `trivial_rect`'s `axis_aligned_orthogonal`: exactly one of the two x components is zero, and one of the y ones. */
-private fun orthogonal(ax: Float, ay: Float, bx: Float, by: Float): Boolean = ((ax == 0f) xor (bx == 0f)) && ((ay == 0f) xor (by == 0f))
-
-/** `std::min(a, b)` on floats: `(b < a) ? b : a`. */
-private fun skMin(a: Float, b: Float): Float = if (b < a) b else a
-
-/** `std::max(a, b)` on floats: `(a < b) ? b : a`. */
-private fun skMax(a: Float, b: Float): Float = if (a < b) b else a
-
-/**
- * `SkRect::contains(const SkRect&)` of rect a (`al`, `at`, `ar`, `ab`) and rect b: both non-empty (`l < r && t < b`)
- * and a's edges on or outside b's.
- */
-private fun contains(al: Float, at: Float, ar: Float, ab: Float, bl: Float, bt: Float, br: Float, bb: Float): Boolean =
-  (bl < br && bt < bb) && (al < ar && at < ab) && al <= bl && at <= bt && ar >= br && ab >= bb
 
 /**
  * `addRect(l, t, r, b, CW)`'s contour (Skia's start index 0: `(l, t) (r, t) (r, b) (l, b)`, then close), written as
@@ -150,25 +123,4 @@ private fun android.graphics.Path.addContour(m: FloatArray, base: Int) {
   lineTo(m[base + 4], m[base + 5])
   lineTo(m[base + 6], m[base + 7])
   close()
-}
-
-/** Stores the outer rect ([outerL], [outerT], [outerR], [outerB]) and the inner rect into the first 8 floats. */
-private fun FloatArray.setRects(
-  outerL: Float,
-  outerT: Float,
-  outerR: Float,
-  outerB: Float,
-  innerL: Float,
-  innerT: Float,
-  innerR: Float,
-  innerB: Float,
-) {
-  this[0] = outerL
-  this[1] = outerT
-  this[2] = outerR
-  this[3] = outerB
-  this[4] = innerL
-  this[5] = innerT
-  this[6] = innerR
-  this[7] = innerB
 }
