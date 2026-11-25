@@ -66,8 +66,8 @@ After the GitHub Pages repository shows that it is reliable.
 
 ### Parallel builds when a screen opens
 
-Done in [#14](https://github.com/desugar-64/obvid/issues/14), not released yet. The opt-in `ShadowBuilds.Parallel`
-builds the bitmaps of new shadows on worker threads during the layout: see
+Done in 0.2.0 ([#14](https://github.com/desugar-64/obvid/issues/14)). The opt-in `ShadowBuilds.Parallel` builds
+the bitmaps of new shadows on worker threads during the layout: see
 [Parallel builds](how-it-works.md#parallel-builds). The next step is [Parallel rebuilds](#parallel-rebuilds).
 
 ### A NEON small blur
