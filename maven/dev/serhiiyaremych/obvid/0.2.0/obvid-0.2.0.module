@@ -1,0 +1,166 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "dev.serhiiyaremych",
+    "module": "obvid",
+    "version": "0.2.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.9.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.compose",
+          "module": "compose-bom",
+          "version": {
+            "requires": "2026.11.01"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui"
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-graphics"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.4.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "obvid-0.2.0.aar",
+          "url": "obvid-0.2.0.aar",
+          "size": 226082,
+          "sha512": "708a6bc460abe8d0de2918952088e29704dc92aa2f424c70aa7680741f7d84356bc5dbdfb1119386535fce30ba64cce86127223b1d03fc503ee1ef07b50abd5d",
+          "sha256": "07354eb39f4235eea841ddfbb7d8449558c0ff971dceeadb16d8b442de91da85",
+          "sha1": "3c8722e9db1c3c32c2f2fef36313d9c53be54539",
+          "md5": "b7293665b21e645fe53fd9f65fb2736f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.9.1"
+          }
+        },
+        {
+          "group": "androidx.collection",
+          "module": "collection",
+          "version": {
+            "requires": "1.6.0"
+          }
+        },
+        {
+          "group": "androidx.compose",
+          "module": "compose-bom",
+          "version": {
+            "requires": "2026.11.01"
+          },
+          "attributes": {
+            "org.gradle.category": "platform"
+          }
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui"
+        },
+        {
+          "group": "androidx.compose.ui",
+          "module": "ui-graphics"
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.4.21"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "obvid-0.2.0.aar",
+          "url": "obvid-0.2.0.aar",
+          "size": 226082,
+          "sha512": "708a6bc460abe8d0de2918952088e29704dc92aa2f424c70aa7680741f7d84356bc5dbdfb1119386535fce30ba64cce86127223b1d03fc503ee1ef07b50abd5d",
+          "sha256": "07354eb39f4235eea841ddfbb7d8449558c0ff971dceeadb16d8b442de91da85",
+          "sha1": "3c8722e9db1c3c32c2f2fef36313d9c53be54539",
+          "md5": "b7293665b21e645fe53fd9f65fb2736f"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "obvid-0.2.0-sources.jar",
+          "url": "obvid-0.2.0-sources.jar",
+          "size": 65187,
+          "sha512": "3978a1b43f0cef57b852af61693ff0f1a63ea20ce8bbdcc1a2cb60dc0f10f5a38e78b705aa5f4fadff571411a5317a37e06345e9eb361b4f18ca0f02fbbe7bbf",
+          "sha256": "03ff26bf8040c6311084b78523c789a3ce6dde59d3e830bdf043925ed41a223b",
+          "sha1": "dde44ed9e3878241504e85fcca93aa08c6d547de",
+          "md5": "90387519bfecc83004d6bcc714dd14e6"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseJavaDocPublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "obvid-0.2.0-javadoc.jar",
+          "url": "obvid-0.2.0-javadoc.jar",
+          "size": 433520,
+          "sha512": "56fac8bbb1a1915dad63394b15bceb9e3cd13ffbbb6d5664dd5c437a34e8c10e6412a9d46df8e9b1fcb333d2f5f20de396cd32721d3fee9875b7e62f7d054a60",
+          "sha256": "3b3c3209b2a669065ba7c10df5e63b28e5d77ce743b9b0602683683fb6a56a22",
+          "sha1": "9dcaac37ad5f610d8417efc197b338f5a67a6cd5",
+          "md5": "b275f692f9af934a64a674339a46bf77"
+        }
+      ]
+    }
+  ]
+}
