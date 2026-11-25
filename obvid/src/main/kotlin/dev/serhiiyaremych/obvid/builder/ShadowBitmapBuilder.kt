@@ -5,6 +5,7 @@ package dev.serhiiyaremych.obvid.builder
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -134,6 +135,9 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
   // The scratch rect of the build's bounds: the draw's local bounds, the mask's device bounds, the path's bounds.
   private val bounds = RectF()
 
+  // A simple round rect's device rect on Obvid's routes, as Compose's `drawRoundRect` gives it (not sorted).
+  private val roundRect = RectF()
+
   // [NinePatchRoute.build]: whether this build's first build of a target may publish its mask (the current build's
   // argument).
   private var mayPublish = true
@@ -209,7 +213,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     val cw = ceil(shadowWidth).toInt()
     val ch = ceil(shadowHeight).toInt()
     require(cw > 0 && ch > 0) { "empty shadow bitmap ${cw}x$ch" }
-    area.begin(target, full, cw, ch, preserveCurrent)
+    area.begin(target, full, IntSize(cw, ch), preserveCurrent)
     stroke.reset()
 
     // createOuterShadowBitmap(path): translated by radius + spread only for a positive spread.
@@ -258,18 +262,18 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     } else {
       area.setCompose()
     }
-    val tx = area.moved(t, area.x)
-    val ty = area.moved(t, area.y)
-    val frame = if (spread <= 0f && target.isFrame) nested.test(target.framePoints, tx, ty) else NestedRects.Answer.Unknown
+    val translate = Offset(area.moved(t, area.translate.x), area.moved(t, area.translate.y))
+    val frame =
+      if (spread <= 0f && target.isFrame) nested.test(target.framePoints, translate) else NestedRects.Answer.Unknown
     return when (frame) {
       NestedRects.Answer.Nested ->
         when (val plan = nested.plan(radius)) {
           ObvidNative.PLAN_SKIA -> false
-          ObvidNative.PLAN_RECTS_MASK -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
-          else -> buildNineRects(area.prepare(), area.width, area.height, radius, plan, inverted = false)
+          ObvidNative.PLAN_RECTS_MASK -> buildMask(local, radius, spread, translate, fromFrame = true)
+          else -> buildNineRects(area.prepare(), area.size.width, area.size.height, radius, plan, inverted = false)
         }
-      NestedRects.Answer.NotNested -> buildMask(local, radius, spread, tx, ty, fromFrame = true)
-      else -> !target.nestedRects && buildMask(local, radius, spread, tx, ty)
+      NestedRects.Answer.NotNested -> buildMask(local, radius, spread, translate, fromFrame = true)
+      else -> !target.nestedRects && buildMask(local, radius, spread, translate)
     }
   }
 
@@ -285,14 +289,13 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     local: android.graphics.Path,
     radius: Float,
     spread: Float,
-    tx: Float,
-    ty: Float,
+    translate: Offset,
     fromFrame: Boolean = false,
   ): Boolean {
-    val taken = maskRoute.setDropPath(local, spread, tx, ty, fromFrame)
+    val taken = maskRoute.setDropPath(local, spread, translate, fromFrame)
     if (taken) {
       route = Route.Mask
-      maskRoute.drawDrop(radius, spread, tx, ty)
+      maskRoute.drawDrop(radius, spread, translate)
     }
     return taken
   }
@@ -310,9 +313,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
    * leaves the build to the Skia route.
    */
   private fun buildRoundRect(bitmaps: ShadowBitmaps, shadowWidth: Float, shadowHeight: Float, radius: Float): Boolean {
-    val rx = bitmaps.cornerRadius.x
-    val ry = bitmaps.cornerRadius.y
-    if (!(rx > 0f && ry > 0f)) return false // drawRoundRect draws a rect
+    val corner = bitmaps.cornerRadius
+    if (!(corner.x > 0f && corner.y > 0f)) return false // drawRoundRect draws a rect
     // createOuterShadowBitmap(size, radius, spread, cornerRadius): drawRoundRect with these floats, no translate; the
     // full extent's canvas translate moves the device rect (`SkRRect::transform`: `mapRect`, each edge plus the
     // translate).
@@ -322,13 +324,14 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     } else {
       area.setCompose()
     }
-    val l = area.moved(radius, area.x)
-    val t = area.moved(radius, area.y)
-    val r = area.moved(shadowWidth - radius, area.x)
-    val b = area.moved(shadowHeight - radius, area.y)
-    val w = area.width
-    val h = area.height
-    val plan = ObvidNative.builderPlanRoundRect(ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius)
+    val l = area.moved(radius, area.translate.x)
+    val t = area.moved(radius, area.translate.y)
+    val r = area.moved(shadowWidth - radius, area.translate.x)
+    val b = area.moved(shadowHeight - radius, area.translate.y)
+    val w = area.size.width
+    val h = area.size.height
+    val plan = ObvidNative.builderPlanRoundRect(ObvidNative.SKIA_CLASS_B, l, t, r, b, corner.x, corner.y, radius)
+    roundRect.set(l, t, r, b)
     val taken = plan != ObvidNative.PLAN_SKIA
     when (plan) {
       ObvidNative.PLAN_SKIA -> Unit
@@ -350,11 +353,12 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         // → drawPath(SkPath::Oval(rect)) with the CTM translate(−l, −t) → the path mapped by that translate →
         // SkScan::AntiFillPath, clipped to (0, 0, mw, mh). Same contour, same float translate, same scan converter
         // and clip, so the same coverage; blitted opaque black onto zero, it is the A8 mask Skia blurs.
-        maskRoute.blurRoundRect(l, t, r, b, rx, ry, area.prepare(), w, h, radius)
+        maskRoute.blurRoundRect(roundRect, corner, area.prepare(), w, h, radius)
       }
       else -> {
         route = Route.NinePatch
-        ninePatch.build(bitmaps, nineMasks, mayPublish, area.prepare(), w, h, radius, l, t, r, b, rx, ry, plan, inverted = false)
+        val target = area.prepare()
+        ninePatch.build(bitmaps, nineMasks, mayPublish, target, w, h, radius, roundRect, corner, plan, inverted = false)
       }
     }
     return taken
@@ -362,7 +366,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
 
   /**
    * Rebuilds [target]'s inner shadow of [outline] (created for the layout [size]) with [radius], [spread] and the
-   * offset ([offsetX], [offsetY]) in px, as Compose computes them (`shadow.radius.toPx()`, …), into the bitmap
+   * [offset] in px, as Compose computes them (`shadow.radius.toPx()`, …), into the bitmap
    * Compose's `InnerShadowRenderer` allocates: `ceil(size)` per axis, grown by `ceil(radius)` on each side for a path
    * (the content is not inset by it). With [preserveCurrent] the current bitmap is left untouched and the shadow is
    * written into the other buffer, which becomes current. A build off the nine-patch route frees [target]'s private
@@ -375,15 +379,14 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     size: Size,
     radius: Float,
     spread: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
     preserveCurrent: Boolean = false,
     mayPublish: Boolean = true,
   ) {
     check(native.isOpen) { "closed" }
     this.mayPublish = mayPublish
     target.clearBands()
-    buildInnerRoutes(target, outline, size, radius, spread, offsetX, offsetY, preserveCurrent)
+    buildInnerRoutes(target, outline, size, radius, spread, offset, preserveCurrent)
     if (route != Route.NinePatch) target.releaseNineMask()
   }
 
@@ -393,8 +396,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     size: Size,
     radius: Float,
     spread: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
     preserveCurrent: Boolean,
   ) {
     target.setOutline(outline)
@@ -411,12 +413,12 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     val bitmap = target.prepare(w, h, preserveCurrent)
     // Sets the route when it takes the build.
     val taken =
-      radius > 0f && buildInnerNative(target, path, image != null, bitmap, size, w, h, radius, spread, offsetX, offsetY)
+      radius > 0f && buildInnerNative(target, path, image != null, bitmap, size, w, h, radius, spread, offset)
     if (taken) {
-      invertAndBand(target, path, bitmap, size, w, h, offsetX, offsetY)
+      invertAndBand(target, path, bitmap, size, w, h, offset)
     } else {
       route = Route.Skia
-      skia.buildInner(bitmap, path, image, target.cornerRadius, size, w, h, radius, spread, offsetX, offsetY)
+      skia.buildInner(bitmap, path, image, target.cornerRadius, size, w, h, radius, spread, offset)
     }
   }
 
@@ -434,24 +436,23 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     h: Int,
     radius: Float,
     spread: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
   ): Boolean =
     when {
-      path == null -> buildInnerRoundRect(target, bitmap, size, w, h, radius, spread, offsetX, offsetY)
-      spreadImage -> buildInnerPathSpread(bitmap, w, h, radius, offsetX, offsetY)
+      path == null -> buildInnerRoundRect(target, bitmap, size, w, h, radius, spread, offset)
+      spreadImage -> buildInnerPathSpread(bitmap, w, h, radius, offset)
       // A canonical frame is decided by Skia's nested-rects test on the moved points; any other path that may be
       // nested rects is left to Skia, which blurs the path draw with its rect nine-patch.
       else ->
-        when (if (target.isFrame) nested.test(target.framePoints, offsetX, offsetY) else NestedRects.Answer.Unknown) {
+        when (if (target.isFrame) nested.test(target.framePoints, offset) else NestedRects.Answer.Unknown) {
           NestedRects.Answer.Nested ->
             when (val plan = nested.plan(radius)) {
               ObvidNative.PLAN_SKIA -> false
-              ObvidNative.PLAN_RECTS_MASK -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
+              ObvidNative.PLAN_RECTS_MASK -> buildInnerPath(path, bitmap, w, h, radius, offset, fromFrame = true)
               else -> buildNineRects(bitmap, w, h, radius, plan, inverted = true)
             }
-          NestedRects.Answer.NotNested -> buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY, fromFrame = true)
-          else -> !target.nestedRects && buildInnerPath(path, bitmap, w, h, radius, offsetX, offsetY)
+          NestedRects.Answer.NotNested -> buildInnerPath(path, bitmap, w, h, radius, offset, fromFrame = true)
+          else -> !target.nestedRects && buildInnerPath(path, bitmap, w, h, radius, offset)
         }
     }
 
@@ -466,8 +467,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     size: Size,
     w: Int,
     h: Int,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
   ) {
     // The nine-patch routes have written the inverted bitmap themselves; the round rect's also returned its hole.
     // The others' hole is grown from the component's centre moved by half the offset (the middle of the overlap of
@@ -479,7 +479,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         Route.NineRects -> 0L
         else ->
           native.invertWithHole(
-            bitmap, w, h, floor((size.width + offsetX) / 2f).toInt(), floor((size.height + offsetY) / 2f).toInt(),
+            bitmap, w, h, floor((size.width + offset.x) / 2f).toInt(), floor((size.height + offset.y) / 2f).toInt(),
           )
       }
     // Bands only for an outline whose pixels do not depend on the clip it is drawn under: a rect, a round rect
@@ -501,11 +501,10 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     w: Int,
     h: Int,
     radius: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
     fromFrame: Boolean = false,
   ): Boolean {
-    val taken = maskRoute.setInnerPath(path, offsetX, offsetY, fromFrame)
+    val taken = maskRoute.setInnerPath(path, offset, fromFrame)
     if (taken) {
       route = Route.Mask
       maskRoute.drawInner(target, w, h, radius)
@@ -526,17 +525,16 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
     h: Int,
     radius: Float,
     spread: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
   ): Boolean {
-    val rx = bitmaps.cornerRadius.x
-    val ry = bitmaps.cornerRadius.y
-    if (!(rx > 0f && ry > 0f)) return false // drawRoundRect draws a rect
-    val l = offsetX + spread
-    val t = offsetY + spread
-    val r = max(l, offsetX + size.width - spread)
-    val b = max(t, offsetY + size.height - spread)
-    val plan = ObvidNative.builderPlanRoundRect(ObvidNative.SKIA_CLASS_B, l, t, r, b, rx, ry, radius)
+    val corner = bitmaps.cornerRadius
+    if (!(corner.x > 0f && corner.y > 0f)) return false // drawRoundRect draws a rect
+    val l = offset.x + spread
+    val t = offset.y + spread
+    val r = max(l, offset.x + size.width - spread)
+    val b = max(t, offset.y + size.height - spread)
+    val plan = ObvidNative.builderPlanRoundRect(ObvidNative.SKIA_CLASS_B, l, t, r, b, corner.x, corner.y, radius)
+    roundRect.set(l, t, r, b)
     val taken = plan != ObvidNative.PLAN_SKIA
     when (plan) {
       ObvidNative.PLAN_SKIA -> Unit
@@ -545,25 +543,25 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         // clipped to the bitmap grown by min(border, 128), so a rect moved partly or wholly off the bitmap is cut the
         // way Skia cuts it.
         route = Route.MaskRoundRect
-        maskRoute.blurRoundRect(l, t, r, b, rx, ry, target, w, h, radius)
+        maskRoute.blurRoundRect(roundRect, corner, target, w, h, radius)
       }
       else -> {
         // draw_nine clips each piece to the device clip (the bitmap): write_nine's clip to the used rect. Written
         // inverted (255 − B), so buildInner skips its separate inversion for this route.
         route = Route.NinePatch
-        ninePatch.build(bitmaps, nineMasks, mayPublish, target, w, h, radius, l, t, r, b, rx, ry, plan, inverted = true)
+        ninePatch.build(bitmaps, nineMasks, mayPublish, target, w, h, radius, roundRect, corner, plan, inverted = true)
       }
     }
     return taken
   }
 
   /** The inner path + spread on Obvid's route ([InnerPathSpread]); false leaves the build to the Skia route. */
-  private fun buildInnerPathSpread(target: Bitmap, w: Int, h: Int, radius: Float, offsetX: Float, offsetY: Float): Boolean {
+  private fun buildInnerPathSpread(target: Bitmap, w: Int, h: Int, radius: Float, offset: Offset): Boolean {
     val image = skia.intermediateBitmap
-    val taken = innerSpread.fits(image, offsetX, offsetY)
+    val taken = innerSpread.fits(image, offset)
     if (taken) {
       route = Route.Mask
-      innerSpread.build(image, target, w, h, radius, offsetX, offsetY)
+      innerSpread.build(image, target, w, h, radius, offset)
     }
     return taken
   }

@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.toRect
@@ -122,7 +123,7 @@ class SharedNineMaskTest {
     val (freshRoute, fresh) =
       ShadowBitmapBuilder().use { b ->
         val t = ShadowBitmaps()
-        if (g.inner) b.buildInner(t, outline, g.size, g.radius, g.spread, g.ox, g.oy) else b.build(t, outline, g.size, g.radius, g.spread)
+        if (g.inner) b.buildInner(t, outline, g.size, g.radius, g.spread, Offset(g.ox, g.oy)) else b.build(t, outline, g.size, g.radius, g.spread)
         b.route to alphaOf(checkNotNull(t.bitmap))
       }
     assertEquals("$label: fresh route ($g)", route, freshRoute)

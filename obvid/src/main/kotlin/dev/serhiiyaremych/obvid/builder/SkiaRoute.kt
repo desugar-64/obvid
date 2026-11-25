@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativePaint
+import androidx.compose.ui.unit.IntSize
 import dev.serhiiyaremych.obvid.TRACE_OUTLINE
 import dev.serhiiyaremych.obvid.TRACE_SKIA
 import dev.serhiiyaremych.obvid.traceSection
@@ -33,8 +34,7 @@ import kotlin.math.max
 internal class SkiaRoute(private val bounds: RectF) {
   private val shadowCanvas = android.graphics.Canvas()
   private var canvasBitmap: Bitmap? = null
-  private var canvasWidth = 0
-  private var canvasHeight = 0
+  private var canvasSize = IntSize.Zero
   private val composeCanvas = androidx.compose.ui.graphics.Canvas(shadowCanvas)
 
   // Compose's paint (`configureShadow`'s color and blend mode never change) and filter.
@@ -76,9 +76,9 @@ internal class SkiaRoute(private val bounds: RectF) {
       val filter = if (radius > 0f) blurFilter(radius) else null
       bindCanvas(target)
       shadowCanvas.save()
-      shadowCanvas.clipRect(0, 0, area.width, area.height)
+      shadowCanvas.clipRect(0, 0, area.size.width, area.size.height)
       shadowCanvas.drawColor(0, PorterDuff.Mode.CLEAR)
-      if (area.full) shadowCanvas.translate(area.x, area.y)
+      if (area.full) shadowCanvas.translate(area.translate.x.toFloat(), area.translate.y.toFloat())
       with(composeCanvas) {
         if (path != null) {
           translate(t, t)
@@ -174,8 +174,7 @@ internal class SkiaRoute(private val bounds: RectF) {
     h: Int,
     radius: Float,
     spread: Float,
-    offsetX: Float,
-    offsetY: Float,
+    offset: Offset,
   ) {
     traceSection(TRACE_SKIA) {
       val filter = if (radius > 0f) blurFilter(radius) else null
@@ -191,20 +190,20 @@ internal class SkiaRoute(private val bounds: RectF) {
         when {
           image != null -> {
             drawRect(0f, 0f, bw, bh, innerPaint.configureInnerShadow())
-            drawImage(image, Offset(offsetX, offsetY), innerPaint.configureInnerShadow(blendMode = BlendMode.Xor, blurFilter = filter))
+            drawImage(image, offset, innerPaint.configureInnerShadow(blendMode = BlendMode.Xor, blurFilter = filter))
           }
           path != null -> {
             save()
-            translate(offsetX, offsetY)
+            translate(offset.x, offset.y)
             drawPath(path, innerPaint.configureInnerShadow(blurFilter = filter))
             restore()
             drawRect(0f, 0f, bw, bh, innerPaint.configureInnerShadow(blendMode = BlendMode.Xor))
           }
           else -> {
-            val left = offsetX + spread
-            val top = offsetY + spread
-            val right = max(left, offsetX + size.width - spread)
-            val bottom = max(top, offsetY + size.height - spread)
+            val left = offset.x + spread
+            val top = offset.y + spread
+            val right = max(left, offset.x + size.width - spread)
+            val bottom = max(top, offset.y + size.height - spread)
             drawRoundRect(left, top, right, bottom, cornerRadius.x, cornerRadius.y, innerPaint.configureInnerShadow(blurFilter = filter))
             drawRect(0f, 0f, bw, bh, innerPaint.configureInnerShadow(blendMode = BlendMode.Xor))
           }
@@ -258,11 +257,10 @@ internal class SkiaRoute(private val bounds: RectF) {
 
   /** (Re)binds [shadowCanvas] to [target] when the bitmap or its dimensions changed (a reconfigure needs a rebind). */
   private fun bindCanvas(target: Bitmap) {
-    if (canvasBitmap !== target || canvasWidth != target.width || canvasHeight != target.height) {
+    if (canvasBitmap !== target || canvasSize.width != target.width || canvasSize.height != target.height) {
       shadowCanvas.setBitmap(target)
       canvasBitmap = target
-      canvasWidth = target.width
-      canvasHeight = target.height
+      canvasSize = IntSize(target.width, target.height)
     }
   }
 

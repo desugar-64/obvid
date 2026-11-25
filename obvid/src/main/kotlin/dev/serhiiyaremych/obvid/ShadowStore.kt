@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import androidx.collection.MutableScatterMap
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
@@ -95,7 +96,7 @@ internal class ShadowEntry(val key: ShadowGeometry) {
     val preserve = sampledByShader || sharedSinceBuild
     if (k.inner) {
       builder.buildInner(
-        bitmaps, outline, k.size, k.radiusPx, k.spreadPx, k.offsetXPx, k.offsetYPx, preserve, mayPublish,
+        bitmaps, outline, k.size, k.radiusPx, k.spreadPx, Offset(k.offsetXPx, k.offsetYPx), preserve, mayPublish,
       )
     } else {
       builder.build(bitmaps, outline, k.size, k.radiusPx, k.spreadPx, preserve, mayPublish, k.extent == ShadowExtent.Full)

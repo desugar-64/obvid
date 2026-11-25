@@ -5,6 +5,7 @@ package dev.serhiiyaremych.obvid.builder
 
 import android.graphics.Bitmap
 import android.graphics.PorterDuff
+import androidx.compose.ui.geometry.Offset
 import dev.serhiiyaremych.obvid.ObvidNative
 import dev.serhiiyaremych.obvid.TRACE_BLUR
 import dev.serhiiyaremych.obvid.TRACE_OUTLINE
@@ -43,25 +44,26 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
   private var placed: Bitmap? = null
   private val placedCanvas = android.graphics.Canvas()
 
-  /** Whether `drawBitmapAsMask` draws [image] at the offset ([offsetX], [offsetY]): no scale in the rect-to-rect matrix. */
-  fun fits(image: Bitmap, offsetX: Float, offsetY: Float): Boolean =
-    (offsetX + image.width) - offsetX == image.width.toFloat() && (offsetY + image.height) - offsetY == image.height.toFloat()
+  /** Whether `drawBitmapAsMask` draws [image] at [offset]: no scale in the rect-to-rect matrix. */
+  fun fits(image: Bitmap, offset: Offset): Boolean =
+    (offset.x + image.width) - offset.x == image.width.toFloat() &&
+      (offset.y + image.height) - offset.y == image.height.toFloat()
 
-  /** Writes B of [image] at the offset ([offsetX], [offsetY]) into [target] (replace mode: the rest is zeroed). */
-  fun build(image: Bitmap, target: Bitmap, w: Int, h: Int, radius: Float, offsetX: Float, offsetY: Float) {
+  /** Writes B of [image] at [offset] into [target] (replace mode: the rest is zeroed). */
+  fun build(image: Bitmap, target: Bitmap, w: Int, h: Int, radius: Float, offset: Offset) {
     val iw = image.width
     val ih = image.height
     // The intermediate's device rect: SkMatrix::mapRect of the translate.
-    val left = offsetX
-    val top = offsetY
-    val right = offsetX + iw
-    val bottom = offsetY + ih
+    val left = offset.x
+    val top = offset.y
+    val right = offset.x + iw
+    val bottom = offset.y + ih
     val clippedOut = !(floor(left) < w && ceil(right) > 0 && floor(top) < h && ceil(bottom) > 0)
     when {
       clippedOut -> blurInto(image, 0, 0, 0, 0, 0, 0, target, w, h, radius)
       treatAsSprite(left, top, right, bottom, iw, ih) ->
         blurInto(image, 0, 0, iw, ih, skRound(left), skRound(top), target, w, h, radius)
-      else -> buildFiltered(image, target, w, h, radius, offsetX, offsetY, left, top, right, bottom)
+      else -> buildFiltered(image, target, w, h, radius, left, top, right, bottom)
     }
   }
 
@@ -72,8 +74,6 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
     w: Int,
     h: Int,
     radius: Float,
-    offsetX: Float,
-    offsetY: Float,
     left: Float,
     top: Float,
     right: Float,
@@ -93,7 +93,7 @@ internal class InnerPathSpread(private val native: NativeBuilder) {
         placedCanvas.drawColor(0, PorterDuff.Mode.CLEAR)
         placedCanvas.save()
         placedCanvas.translate(-l.toFloat(), -t.toFloat())
-        placedCanvas.drawBitmap(image, offsetX, offsetY, imagePaint)
+        placedCanvas.drawBitmap(image, left, top, imagePaint)
         placedCanvas.restore()
       }
       blurInto(placedBitmap, 0, 0, mw, mh, l, t, target, w, h, radius)

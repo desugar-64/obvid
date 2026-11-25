@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -229,7 +230,7 @@ class NinePatchReuseTest {
         fun build(sizeDp: Int, ox: Float) {
           val s = size(sizeDp)
           val outline = shape.createOutline(s, LayoutDirection.Ltr, density)
-          if (inner) b.buildInner(t, outline, s, radius, 0f, ox, 0f, preserveCurrent = true) else b.build(t, outline, s, radius, 0f)
+          if (inner) b.buildInner(t, outline, s, radius, 0f, Offset(ox, 0f), preserveCurrent = true) else b.build(t, outline, s, radius, 0f)
           assertEquals("route (inner $inner)", ShadowBitmapBuilder.Route.NinePatch, b.route)
         }
         build(200, 3f)
@@ -394,7 +395,7 @@ class NinePatchReuseTest {
     oy: Float,
     preserve: Boolean,
   ) {
-    if (inner) b.buildInner(t, outline, size, radius, spread, ox, oy, preserve) else b.build(t, outline, size, radius, spread, preserve)
+    if (inner) b.buildInner(t, outline, size, radius, spread, Offset(ox, oy), preserve) else b.build(t, outline, size, radius, spread, preserve)
   }
 
   /** The kept small-mask buffer of [t]. */

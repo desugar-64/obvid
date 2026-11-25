@@ -6,6 +6,8 @@ package dev.serhiiyaremych.obvid.builder
 import android.graphics.Bitmap
 import android.graphics.PorterDuff
 import android.graphics.RectF
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
 import dev.serhiiyaremych.obvid.ObvidNative
@@ -37,16 +39,14 @@ internal class MaskRoute(
   private val devPath = android.graphics.Path()
 
   // The corner radii of the round rect [blurMask] draws when it has no path.
-  private var cornerX = 0f
-  private var cornerY = 0f
+  private var corner = CornerRadius.Zero
 
   /**
    * `createOuterShadowBitmap(path)` on Obvid's pipeline: Compose translates by its t and draws [local] blurred (then
-   * stroked with spread > 0); Skia fills the path moved by the CTM's translate ([tx], [ty]: t, or the area's
-   * translate plus t) in device space, through `filterPath`, unless the moved path is a rect (`countNestedRects`:
-   * Skia's `BlurRect`, not Obvid's; nested rects reach this only where Skia's `filterRectsToNine` returns
-   * unimplemented). Sets [devPath]; true when this route takes the build ([drawDrop] then writes it), false leaves it
-   * to the Skia route.
+   * stroked with spread > 0); Skia fills the path moved by the CTM's [translate] (t, or the area's translate plus t)
+   * in device space, through `filterPath`, unless the moved path is a rect (`countNestedRects`: Skia's `BlurRect`, not
+   * Obvid's; nested rects reach this only where Skia's `filterRectsToNine` returns unimplemented). Sets [devPath]; true
+   * when this route takes the build ([drawDrop] then writes it), false leaves it to the Skia route.
    *
    * Also left to the Skia route, decided before anything is written, the paths whose masks Skia forms otherwise:
    * - an inverse fill: `DrawToMask` bounds it by the clip grown by the blur's margin, not by the path (its stroke is an
@@ -66,13 +66,13 @@ internal class MaskRoute(
    * rects as a region, without anti-aliasing. Other such paths still take it here; a rebuilt frame does not (`moveTo`
    * clears it).
    */
-  fun setDropPath(local: android.graphics.Path, spread: Float, tx: Float, ty: Float, fromFrame: Boolean): Boolean {
+  fun setDropPath(local: android.graphics.Path, spread: Float, translate: Offset, fromFrame: Boolean): Boolean {
     if (local.isInverseFillType || (spread > 0f && hairlineSpread(spread))) return false
     if (fromFrame) {
       nested.setMovedPath(devPath, local.fillType)
     } else {
       devPath.set(local)
-      devPath.offset(tx, ty)
+      devPath.offset(translate.x, translate.y)
     }
     return !devPath.isRect(null) && !(spread > 0f && strokeMayBeRects(local, spread))
   }
@@ -87,13 +87,13 @@ internal class MaskRoute(
   }
 
   /** Writes the drop build [setDropPath] took into [area]'s bitmap: the fill, then the stroke source-over. */
-  fun drawDrop(radius: Float, spread: Float, tx: Float, ty: Float) {
+  fun drawDrop(radius: Float, spread: Float, translate: Offset) {
     native.updateBorder(radius)
     val target = area.prepare()
-    blurPath(devPath, target, area.width, area.height, radius, MODE_REPLACE)
+    blurPath(devPath, target, area.size.width, area.size.height, radius, MODE_REPLACE)
     if (spread > 0f) {
-      stroke.path.offset(tx, ty)
-      blurPath(stroke.path, target, area.width, area.height, radius, MODE_SRC_OVER)
+      stroke.path.offset(translate.x, translate.y)
+      blurPath(stroke.path, target, area.size.width, area.size.height, radius, MODE_SRC_OVER)
     }
   }
 
@@ -107,13 +107,13 @@ internal class MaskRoute(
    * route. With [fromFrame] (a canonical frame) the moved path is rebuilt from the frame's moved points, as in
    * [setDropPath] (which explains the platform shortcut this avoids on API 23–33).
    */
-  fun setInnerPath(path: Path, offsetX: Float, offsetY: Float, fromFrame: Boolean): Boolean {
+  fun setInnerPath(path: Path, offset: Offset, fromFrame: Boolean): Boolean {
     if (path.asAndroidPath().isInverseFillType) return false
     if (fromFrame) {
       nested.setMovedPath(devPath, path.asAndroidPath().fillType)
     } else {
       devPath.set(path.asAndroidPath())
-      devPath.offset(offsetX, offsetY)
+      devPath.offset(offset.x, offset.y)
     }
     return !devPath.isRect(null)
   }
@@ -125,15 +125,13 @@ internal class MaskRoute(
   }
 
   /**
-   * Skia's full mask of a simple round rect (`SkPath::RRect(rrect)` or `SkPath::Oval(rect)`): ([l], [t], [r], [b])
-   * with corner radii ([rx], [ry]), drawn by the mask canvas's `drawRoundRect` and blurred into [target] (replace
-   * mode).
+   * Skia's full mask of a simple round rect (`SkPath::RRect(rrect)` or `SkPath::Oval(rect)`): [rect] with [corner]
+   * radii, drawn by the mask canvas's `drawRoundRect` and blurred into [target] (replace mode).
    */
-  fun blurRoundRect(l: Float, t: Float, r: Float, b: Float, rx: Float, ry: Float, target: Bitmap, w: Int, h: Int, radius: Float) {
+  fun blurRoundRect(rect: RectF, corner: CornerRadius, target: Bitmap, w: Int, h: Int, radius: Float) {
     native.updateBorder(radius)
-    bounds.set(l, t, r, b)
-    cornerX = rx
-    cornerY = ry
+    bounds.set(rect)
+    this.corner = corner
     blurMask(null, target, w, h, radius, MODE_REPLACE)
   }
 
@@ -147,7 +145,7 @@ internal class MaskRoute(
    * `compute_mask_bounds` (SkDraw.cpp): the device path bounds ([bounds]) outset by ½, rounded out, intersected with
    * the clip (Compose's bitmap) grown by min(border, 128); then the mask is drawn at that origin and blurred into
    * [target]. Replace mode also zeroes the rest of [target]. The mask is [devicePath], or with null the round rect
-   * [bounds] with corner radii ([cornerX], [cornerY]).
+   * [bounds] with [corner] radii.
    */
   private fun blurMask(devicePath: android.graphics.Path?, target: Bitmap, w: Int, h: Int, radius: Float, mode: Int) {
     val m = min(native.border, 128)
@@ -170,7 +168,7 @@ internal class MaskRoute(
         if (devicePath != null) {
           maskCanvas.drawPath(devicePath, mask.paint)
         } else {
-          maskCanvas.drawRoundRect(bounds, cornerX, cornerY, mask.paint)
+          maskCanvas.drawRoundRect(bounds, corner.x, corner.y, mask.paint)
         }
         maskCanvas.restore()
       }

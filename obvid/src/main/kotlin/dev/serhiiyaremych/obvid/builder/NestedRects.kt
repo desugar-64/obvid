@@ -4,6 +4,7 @@
 package dev.serhiiyaremych.obvid.builder
 
 import android.graphics.RectF
+import androidx.compose.ui.geometry.Offset
 import dev.serhiiyaremych.obvid.ObvidNative
 
 /**
@@ -46,10 +47,12 @@ internal class NestedRects {
 
   /**
    * Skia's nested-rects test (`SkPathPriv::IsNestedFillRects`) on a canonical frame's [points] ([ShadowBitmaps.isFrame])
-   * moved by Compose's translate ([tx], [ty]): each point `p + t` in float, as the CTM maps it.
+   * moved by Compose's [translate]: each point `p + t` in float, as the CTM maps it.
    */
-  fun test(points: FloatArray, tx: Float, ty: Float): Answer {
+  fun test(points: FloatArray, translate: Offset): Answer {
     val m = moved
+    val tx = translate.x
+    val ty = translate.y
     for (i in m.indices) m[i] = points[i] + if ((i and 1) == 0) tx else ty
     val bothRects = m.all { it.isFinite() } && trivialRect(m, 0) && trivialRect(m, 8)
     return if (bothRects) nestedOrNot(m) else Answer.Unknown
