@@ -13,33 +13,21 @@ import androidx.compose.runtime.staticCompositionLocalOf
  */
 public enum class ShadowExtent {
   /**
-   * Compose's window: the shape grown by `radius + spread` on each side. Identical to Compose's `dropShadow`
-   * (Android 16–17's Skia). The blur still holds a few levels at that distance (about 8–12 of 255 behind a solid
-   * shape), so a strong, coloured shadow on a dark background can end in a straight cut along the bitmap's edge.
+   * Compose's window: the shape grown by `radius + spread`. The same pixels as Compose; a strong shadow can end in a
+   * visible cut at the window's edge.
    */
   Compose,
 
   /**
-   * Until the blur reaches zero: the shape grown by the spread, then by the smallest margin past which the blurred
-   * output is guaranteed to be 0 (about 1.4–1.6 × radius for the blur's own arithmetic; the device's Skia's reach for
-   * the shapes it draws itself, such as rects), so the shadow fades out without a cut.
-   *
-   * Costs and differences:
-   * - a larger bitmap to build, blur and draw: typically 15–36 % more pixels than [Compose] (more for a small shape
-   *   with a large radius);
-   * - the output is no longer identical to Compose's: the tail Compose cuts off is kept. Inside Compose's window it is
-   *   Compose's shadow drawn on a larger canvas, moved by whole pixels (a coordinate moved that way can round
-   *   differently in its last bit, rarely changing a pixel by a level); a gradient brush stays where Compose puts it;
-   * - only drop shadows: [innerShadow] is unaffected (its blur lies inside the shape, in a bitmap that covers it).
-   *
-   * No effect where [dropShadow] falls back to Compose's own modifier (the native library cannot be used).
+   * Until the blur reaches zero, so the shadow fades out without a cut. Costs a larger bitmap (typically 15–36 % more
+   * pixels than [Compose]), and the output no longer matches Compose's. Applies to [dropShadow] only; no effect when it
+   * falls back to Compose's modifier.
    */
   Full,
 }
 
 /**
- * The [ShadowExtent] of every [dropShadow] below. Changing it rebuilds the shadows that read it (their bitmap's size
- * changes); a shadow whose extent stays the same keeps its bitmap.
+ * The [ShadowExtent] of every [dropShadow] below. A change rebuilds the shadows that read it.
  *
  * ```
  * CompositionLocalProvider(LocalShadowExtent provides ShadowExtent.Full) { App() }

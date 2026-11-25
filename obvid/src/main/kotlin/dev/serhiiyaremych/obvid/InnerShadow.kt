@@ -25,17 +25,12 @@ import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.draw.innerShadow as composeInnerShadow
 
 /**
- * Drop-in replacement for Compose's `Modifier.innerShadow(shape, shadow)` (ui 1.13.0), built by the native pipeline:
- * the pixels Compose draws on Android 16–17's Skia, on every Android version (on older ones this keeps that output
- * rather than the device Skia's; the masks are still rasterized by the device's `Canvas`, and rects, radius 0 and
- * paths with a positive spread are drawn by the device's Skia). The bitmap is rebuilt only when the shape, layout
- * size, layout direction, density, radius, spread or offset changes; color, brush, alpha and blend mode only change the
- * final draw call. If the native library cannot be used, this is Compose's own `innerShadow`.
+ * Drop-in replacement for Compose's `Modifier.innerShadow(shape, shadow)`. Draws the same pixels as Compose on
+ * Android 16–17, on every Android version; on older versions rects, radius 0 and paths with spread are drawn by the
+ * device's Skia. Rebuilds the bitmap only when the shape, size, layout direction, density, radius, spread or offset
+ * changes. Uses Compose's `innerShadow` when the native library cannot be loaded.
  *
- * [LocalShadowExtent] does not apply: the bitmap covers the whole component, so no part of the blur the shadow shows
- * is cut off by it.
- *
- * Its builds are traced as `Obvid innerShadow build`, with the sub-sections listed on [dropShadow].
+ * [LocalShadowExtent] does not apply. Builds show in traces as `Obvid innerShadow build`.
  */
 @Stable
 public fun Modifier.innerShadow(shape: Shape, shadow: Shadow): Modifier =
@@ -43,9 +38,8 @@ public fun Modifier.innerShadow(shape: Shape, shadow: Shadow): Modifier =
   else this then CpuInnerShadowElement(shape, shadow)
 
 /**
- * Drop-in replacement for Compose's `Modifier.innerShadow(shape) { … }` (ui 1.13.0), on Compose's own
- * [InnerShadowScope]: the block is read in the draw phase, as in Compose. Same rebuild rules and fallback as the
- * [Shadow] overload.
+ * Drop-in replacement for Compose's `Modifier.innerShadow(shape) { … }`, on Compose's own [InnerShadowScope]: the block
+ * is read in the draw phase, as in Compose. Same rebuild rules and fallback as the [Shadow] overload.
  */
 @Stable
 public fun Modifier.innerShadow(shape: Shape, block: InnerShadowScope.() -> Unit): Modifier =
