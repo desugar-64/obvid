@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0
+
 - New opt-in: parallel builds ([#14](https://github.com/desugar-64/obvid/issues/14)). With
   `LocalShadowBuilds provides ShadowBuilds.Parallel`, up to 3 worker threads on the big cores build the bitmap of each
   new shadow during the layout. The draw uses the finished bitmap. The pixels stay the same.

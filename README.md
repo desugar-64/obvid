@@ -58,7 +58,7 @@ Obvid is published to a Maven repository on GitHub Pages. Add the repository and
 dependencyResolutionManagement { repositories { maven("https://desugar-64.github.io/obvid/maven") } }
 
 // build.gradle.kts
-dependencies { implementation("dev.serhiiyaremych:obvid:0.1.1") }
+dependencies { implementation("dev.serhiiyaremych:obvid:0.2.0") }
 ```
 
 Then change the imports. The rest of your code stays the same: the modifiers take the same parameters, including the
@@ -396,7 +396,7 @@ Ideas that were measured or scoped. A ticked item is done; the version in bracke
 - [ ] [A GPU route](docs/to-do.md#a-gpu-route) for the simplest shapes, to compare with the CPU route.
 - [ ] [More ABIs](docs/to-do.md#more-abis): 32-bit ARM and x86_64.
 - [ ] [Maven Central](docs/to-do.md#maven-central), after the GitHub Pages repository shows that it is reliable.
-- [x] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds.
+- [x] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds (0.2.0).
 - [x] [A NEON small blur](docs/to-do.md#a-neon-small-blur) for blur radii below approximately 2.6 px (0.1.1).
 
 ## License and credits
