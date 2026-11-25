@@ -160,7 +160,7 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
    * publishes no nine-patch mask ([NinePatchRoute.build]).
    *
    * With [full] ([ShadowExtent.Full]) the bitmap is the full-extent area instead of Compose's: Compose's draw calls on
-   * a larger canvas, translated by whole pixels ([ShadowBitmaps.originX], [ShadowBitmaps.originY]: where the bitmap
+   * a larger canvas, translated by whole pixels ([ShadowBitmaps.origin]: where the bitmap
    * starts in Compose's), cropped to the shape drawn (the outline grown by the spread, as Compose draws it) grown by
    * the margin past which the blur is 0: [ObvidNative.builderFullMargin] on Obvid's routes, the device Skia's reach
    * ([ObvidNative.builderSkiaReachMargin]) on [Route.Skia]. Every route decides and draws on that canvas's device
@@ -353,7 +353,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         // → drawPath(SkPath::Oval(rect)) with the CTM translate(−l, −t) → the path mapped by that translate →
         // SkScan::AntiFillPath, clipped to (0, 0, mw, mh). Same contour, same float translate, same scan converter
         // and clip, so the same coverage; blitted opaque black onto zero, it is the A8 mask Skia blurs.
-        maskRoute.blurRoundRect(roundRect, corner, area.prepare(), w, h, radius)
+        maskRoute.setRoundRect(roundRect, corner, radius)
+        maskRoute.blurRoundRect(area.prepare(), w, h, radius)
       }
       else -> {
         route = Route.NinePatch
@@ -543,7 +544,8 @@ internal class ShadowBitmapBuilder(nineMasks: NineMaskCache = NineMaskCache()) :
         // clipped to the bitmap grown by min(border, 128), so a rect moved partly or wholly off the bitmap is cut the
         // way Skia cuts it.
         route = Route.MaskRoundRect
-        maskRoute.blurRoundRect(roundRect, corner, target, w, h, radius)
+        maskRoute.setRoundRect(roundRect, corner, radius)
+        maskRoute.blurRoundRect(target, w, h, radius)
       }
       else -> {
         // draw_nine clips each piece to the device clip (the bitmap): write_nine's clip to the used rect. Written

@@ -93,7 +93,7 @@ internal class ShadowDrawState {
    * `DropShadowPainter.onDraw` → `ShadowRenderer.drawShadow` → `DropShadowRenderer.onDrawShadow`, with the same calls
    * in the same order: rebuild through [ShadowStore] if the geometry (the [extent] included) changed, then Compose's
    * draw call. The painter's own alpha is 1 and its color filter null in the modifier, so [alpha] (in [0, 1]) is drawn
-   * as is. A full-extent bitmap is drawn at Compose's position moved by its origin ([ShadowBitmaps.originX]), so the
+   * as is. A full-extent bitmap is drawn at Compose's position moved by its origin ([ShadowBitmaps.origin]), so the
    * pixels Compose's window holds land where Compose draws them; a brush's gradient stays on Compose's window.
    */
   fun DrawScope.drawShadow(
@@ -130,7 +130,7 @@ internal class ShadowDrawState {
         translate(offset, offset) {
           drawRect(
             brush = shaderBrush,
-            topLeft = origin.toOffset(),
+            topLeft = entry.bitmaps.origin.toOffset(),
             size = Size(entry.usedWidth.toFloat(), entry.usedHeight.toFloat()),
             alpha = alpha,
             blendMode = blendMode,

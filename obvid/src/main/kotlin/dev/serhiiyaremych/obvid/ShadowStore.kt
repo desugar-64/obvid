@@ -121,7 +121,7 @@ internal class ShadowEntry(val key: ShadowGeometry) {
   /**
    * The bitmap size of the last build, the bitmap's own size: Compose's (drop: `ceil(size + 2·radius + 2·spread)` per
    * axis; inner: `ceil(size)`, plus `2·ceil(radius)` for a path), or a drop shadow's full-extent window
-   * ([ShadowBitmaps.originX]).
+   * ([ShadowBitmaps.origin]).
    */
   val usedWidth: Int
     get() = bitmaps.bitmap?.width ?: 0

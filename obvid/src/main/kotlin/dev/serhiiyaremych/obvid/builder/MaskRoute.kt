@@ -125,13 +125,17 @@ internal class MaskRoute(
   }
 
   /**
-   * Skia's full mask of a simple round rect (`SkPath::RRect(rrect)` or `SkPath::Oval(rect)`): [rect] with [corner]
-   * radii, drawn by the mask canvas's `drawRoundRect` and blurred into [target] (replace mode).
+   * Skia's full mask of a simple round rect (`SkPath::RRect(rrect)` or `SkPath::Oval(rect)`), first call: [rect] with
+   * [corner] radii, blurred with [radius]. [blurRoundRect] then draws and blurs it.
    */
-  fun blurRoundRect(rect: RectF, corner: CornerRadius, target: Bitmap, w: Int, h: Int, radius: Float) {
+  fun setRoundRect(rect: RectF, corner: CornerRadius, radius: Float) {
     native.updateBorder(radius)
     bounds.set(rect)
     this.corner = corner
+  }
+
+  /** The round rect of [setRoundRect], drawn by the mask canvas's `drawRoundRect` and blurred into [target] (replace). */
+  fun blurRoundRect(target: Bitmap, w: Int, h: Int, radius: Float) {
     blurMask(null, target, w, h, radius, MODE_REPLACE)
   }
 

@@ -170,7 +170,7 @@ STAGES = ('alloc', 'mask', 'blur', 'write', 'resample', 'glue', 'record', 'other
 
 # Frame-name keys of the stage rules (substrings; see stage_of for their order).
 ALLOC_KEYS = ('android.graphics.Bitmap.createBitmap', 'Bitmap_creator', 'allocateHeapBitmap',
-              'androidx.compose.ui.graphics.ImageBitmapKt.ImageBitmap', 'A8BitmapsKt.newA8')
+              'androidx.compose.ui.graphics.ImageBitmapKt.ImageBitmap', 'Kt.newA8')
 RECORD_KEYS = ('android.graphics.BaseRecordingCanvas.', 'android.graphics.RecordingCanvas.', 'SkiaRecordingCanvas',
                'DisplayListData', 'RecordingCanvas::')
 DRAW_SCOPE_DRAW = re.compile(r'(CanvasDrawScope|LayoutNodeDrawScope)\.draw(?!Content|Direct)')
@@ -264,7 +264,7 @@ def stage_of(frames):
                 return stage
         if re.search(r'\.(draw|native)(Bitmap|Image)', draw):
             return 'write'
-        if has(frames, OURS) and not has(frames, *SKIA_MASK_FILTER):
+        if has(frames, OURS) and not has([f for f in frames if not f.startswith(OURS)], *SKIA_MASK_FILTER):
             return 'mask'
         return 'write'
     if has(frames, *SETUP_KEYS):
