@@ -11,6 +11,7 @@ import androidx.compose.ui.draw.DropShadowScope
 import androidx.compose.ui.draw.InnerShadowScope
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.shadow.Shadow
+import dev.serhiiyaremych.obvid.ShadowBuilds
 import dev.serhiiyaremych.obvid.ShadowExtent
 import androidx.compose.ui.draw.dropShadow as composeDropShadow
 import androidx.compose.ui.draw.innerShadow as composeInnerShadow
@@ -97,6 +98,29 @@ fun readNoInnerShadowsSetting(context: Context) {
   } catch (_: SecurityException) {
     false
   }
+}
+
+/**
+ * The global setting that, when 1, builds Obvid's first shadows on worker threads ([ShadowBuilds.Parallel]) in the demo
+ * app and its scenes: `adb shell settings put global obvid_demo_parallel_builds 1`, then force-stop the sample;
+ * `settings delete global obvid_demo_parallel_builds` to undo. Read once per process by [readParallelBuildsSetting].
+ */
+const val ParallelBuildsSetting = "obvid_demo_parallel_builds"
+
+private var parallelBuilds = false
+private var parallelBuildsRead = false
+
+/** Where first shadows build per [ParallelBuildsSetting], read on the first call in this process. */
+fun readParallelBuildsSetting(context: Context): ShadowBuilds {
+  if (!parallelBuildsRead) {
+    parallelBuildsRead = true
+    parallelBuilds = try {
+      Settings.Global.getInt(context.contentResolver, ParallelBuildsSetting, 0) == 1
+    } catch (_: SecurityException) {
+      false
+    }
+  }
+  return if (parallelBuilds) ShadowBuilds.Parallel else ShadowBuilds.Inline
 }
 
 /**

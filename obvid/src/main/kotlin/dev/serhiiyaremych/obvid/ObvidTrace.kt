@@ -13,6 +13,8 @@ internal const val TRACE_OUTLINE = "Obvid outline"
 internal const val TRACE_BLUR = "Obvid blur"
 internal const val TRACE_NINE_PATCH = "Obvid nine-patch"
 internal const val TRACE_SKIA = "Obvid Skia route"
+internal const val TRACE_PREFETCH = "Obvid prefetch build"
+internal const val TRACE_PREFETCH_WAIT = "Obvid prefetch wait"
 
 /** [block] inside the trace section [name] (closed on a throw too). */
 internal inline fun <T> traceSection(name: String, block: () -> T): T {

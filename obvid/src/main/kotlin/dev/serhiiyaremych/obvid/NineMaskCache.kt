@@ -220,6 +220,31 @@ internal class NineMaskCache(
     bytes -= mask.bytes
   }
 
+  /**
+   * Takes what a job's own cache [from] published (its worker's build of a first appearance, [ShadowPrefetch]): each
+   * mask whose key this cache does not hold yet is published here, as that build would have published it in this
+   * cache; a mask whose key is already here is recycled (no recorded frame draws a nine-patch mask). Its build counters
+   * are added to these ([publishCount] counts the masks published here). [from] is empty afterwards.
+   */
+  fun adoptFrom(from: NineMaskCache) {
+    while (true) {
+      val mask = from.oldest ?: break
+      from.masks.remove(mask.key, mask)
+      from.unlink(mask)
+      if (masks[mask.key] == null && canPublish(mask.bitmap.width, mask.bitmap.height)) {
+        masks[mask.key] = mask
+        link(mask)
+        publishCount++
+      } else {
+        mask.bitmap.recycle()
+      }
+    }
+    reuseCount += from.reuseCount
+    sharedHitCount += from.sharedHitCount
+    blurCount += from.blurCount
+    allocationCount += from.allocationCount
+  }
+
   /** Test introspection: the published masks, least recently used first. */
   fun publishedForTest(): List<NineMask> = buildList {
     var m = oldest

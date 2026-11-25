@@ -29,6 +29,9 @@ import androidx.compose.ui.draw.dropShadow as composeDropShadow
  * that mask into the shadow bitmap; `Obvid nine-patch`, a round rect or rect frame blurred small and stretched (or a
  * kept blurred piece only stretched again); `Obvid Skia route`, a shadow left to the device's Skia (Compose's own
  * draw calls). The rest of a build is the outline's creation, the bitmap's preparation and an inner shadow's inversion.
+ * With [ShadowBuilds.Parallel]: `Obvid prefetch build`, a first build on a worker thread, with `Obvid outline`,
+ * `Obvid blur`, `Obvid nine-patch` or `Obvid Skia route` directly inside (the shape's outline was made on the UI
+ * thread before); `Obvid prefetch wait`, a draw on the UI thread that waits for that build to end.
  */
 @Stable
 public fun Modifier.dropShadow(shape: Shape, shadow: Shadow): Modifier =

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- New opt-in: parallel builds ([#14](https://github.com/desugar-64/obvid/issues/14)). With
+  `LocalShadowBuilds provides ShadowBuilds.Parallel`, up to 3 worker threads on the big cores build the bitmap of each
+  new shadow during the layout. The draw uses the finished bitmap. The pixels stay the same.
+  - The demo's feed opens with 36 new shadows. Obvid's time on the main thread goes from 13.2 to 1.1 ms on a Pixel 6,
+    and from 16.5 to 2.4 ms on a Xiaomi Pad 5.
+  - For screens that open with many shadows. With one new shadow, a frame gets approximately 1.3 ms slower.
+  - A shadow that changes rebuilds on the main thread, as before. The default, `ShadowBuilds.Inline`, does not change.
+
 ## 0.1.1
 
 - Shadows with blur radii below approximately 2.6 px (for example 0.5–0.9 dp on a Pixel 6) use the Obvid blur on all

@@ -181,6 +181,42 @@ a zero. Two conditions keep this true:
 On a tablet with a weak GPU, a feed with many shadows scrolls at 46.5 fps with bands and at 42 fps with Compose. The GPU
 time for each frame is 29% less, and there are one-third fewer janky frames.
 
+## Parallel builds
+
+With `LocalShadowBuilds provides ShadowBuilds.Parallel`, the first build of a shadow moves from the draw to a worker
+thread:
+
+1. **Layout.** The layout measures the shadow's node. If the node has no bitmap yet and no other node queued the same
+   shadow, it makes the outline and puts a build job in a queue. The outline's path is copied, because a shape can
+   change the same path object later.
+2. **Worker.** A worker takes the job and builds the bitmap with its own builder and its own nine-patch masks. Nothing
+   goes into the shared cache yet, so the cache stays on the main thread.
+3. **Draw.** The draw takes the job. If the job is finished, the draw uses its bitmap and puts it into the cache. If a
+   worker builds it now, the draw waits. If no worker took it yet, the draw builds it itself, and the worker skips it.
+
+Only one side builds each job, so a draw never waits for a job that is still in the queue. The pixels are the same as
+with an inline build. A shadow that changes (an animation, a new size) rebuilds in the draw, as before.
+
+To see the layout, a node must be layout-aware. Compose remeasures the layout of a layout-aware node when the node is
+added to it. So a node is layout-aware only if `Parallel` is set when the node is attached. With `Inline`, the node
+only draws, as in Compose.
+
+**Threads and cores.** The big cores are the cores with a scheduler capacity (`cpu_capacity` in sysfs) above 1.5
+times the lowest one; if no core is above it (no little cores), all cores count. There is one worker for each big core,
+minus one core for the main thread: 1 to 3 workers. If a capacity cannot be read, Obvid does not pin, and starts half
+the cores minus one: also 1 to 3. Each worker binds itself to a different big core: new threads have no load history,
+so the scheduler otherwise puts them all on one core or on the little cores. A core that the vendor's core control
+keeps isolated at low load refuses the binding; then the worker can run on any big core. The main thread starts only
+the first worker, and that worker reads the core layout. A worker stops after 3 s without work.
+
+**Costs.** A node that queues a job computes its key and outline in the layout, so the layout becomes longer. Builds
+in parallel do not share their blurred nine-patch masks, so the total CPU work is a little higher. On a Pixel 6, the
+app's CPU time and the energy of the CPU rails stayed the same within the noise.
+
+**Traces.** `Obvid prefetch build` is a build on a worker. `Obvid outline`, `Obvid blur`, `Obvid nine-patch` or
+`Obvid Skia route` are directly inside it; there is no `Obvid dropShadow build` around them. `Obvid prefetch wait` is
+a draw that waits for a worker.
+
 ## How Obvid stays fast
 
 The native library is `no_std` Rust (`core` and `alloc`). The panic system of `std` would add a backtrace symbolizer,

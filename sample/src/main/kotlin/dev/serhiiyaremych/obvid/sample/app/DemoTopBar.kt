@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.serhiiyaremych.obvid.ShadowBuilds
 import dev.serhiiyaremych.obvid.sample.LocalDemoLayout
 import dev.serhiiyaremych.obvid.sample.ShadowImpl
 import dev.serhiiyaremych.obvid.sample.discover.DiscoverIcon
@@ -46,9 +47,9 @@ import dev.serhiiyaremych.obvid.sample.discover.LineIcon
 private val IconButtonGlyphInset = 12.dp
 
 /**
- * The app bar: title, the [ImplSwitch] (switching [impl]) and the frame HUD switch, in a top app bar's metrics (64 dp
- * row below the status bar, title in `titleLarge`). No background of its own: it lies over the content on the top
- * chrome's scrim ([TopChrome]).
+ * The app bar: title, the [ImplSwitch] (switching [impl]), the [BuildsToggle] and the frame HUD switch, in a top app
+ * bar's metrics (64 dp row below the status bar, title in `titleLarge`). No background of its own: it lies over the
+ * content on the top chrome's scrim ([TopChrome]).
  *
  * A plain row rather than Material's `TopAppBar`, which clips its content to the bar: nothing here clips, so the
  * selected segment's shadow spills over whatever lies below. Its title starts at [LocalDemoLayout]'s margin and the
@@ -58,6 +59,8 @@ private val IconButtonGlyphInset = 12.dp
 fun DemoTopBar(
   impl: ShadowImpl,
   onImplChange: (ShadowImpl) -> Unit,
+  builds: ShadowBuilds,
+  onBuildsChange: (ShadowBuilds) -> Unit,
   hud: Boolean,
   onHudChange: (Boolean) -> Unit,
   modifier: Modifier = Modifier,
@@ -84,8 +87,35 @@ fun DemoTopBar(
     CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
       ImplSwitch(impl, onImplChange)
       Spacer(Modifier.width(4.dp))
+      BuildsToggle(builds, onBuildsChange, enabled = impl == ShadowImpl.Cpu)
       HudToggle(hud, onHudChange)
     }
+  }
+}
+
+/**
+ * Obvid's first builds on worker threads ([ShadowBuilds.Parallel]) or in the draw; announced as a switch. Tertiary (the
+ * action green) while parallel. Only Obvid's shadows build this way: disabled while Compose's are shown.
+ */
+@Composable
+fun BuildsToggle(
+  builds: ShadowBuilds,
+  onChange: (ShadowBuilds) -> Unit,
+  enabled: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  IconToggleButton(
+    checked = builds == ShadowBuilds.Parallel,
+    onCheckedChange = { onChange(if (it) ShadowBuilds.Parallel else ShadowBuilds.Inline) },
+    enabled = enabled,
+    modifier = modifier.semantics {
+      role = Role.Switch
+      contentDescription = "Parallel shadow builds"
+    },
+    colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = MaterialTheme.colorScheme.tertiary),
+  ) {
+    val tint = LocalContentColor.current
+    LineIcon(DiscoverIcon.Layers, Modifier.size(24.dp), color = { tint })
   }
 }
 
@@ -111,6 +141,7 @@ fun HudToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Mo
 @Composable
 private fun DemoTopBarPreview() = DemoPreview {
   var impl by remember { mutableStateOf(ShadowImpl.Cpu) }
+  var builds by remember { mutableStateOf(ShadowBuilds.Inline) }
   var hud by remember { mutableStateOf(false) }
-  DemoTopBar(impl, { impl = it }, hud, { hud = it })
+  DemoTopBar(impl, { impl = it }, builds, { builds = it }, hud, { hud = it })
 }

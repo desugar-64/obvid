@@ -38,7 +38,9 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import dev.serhiiyaremych.obvid.LocalShadowBuilds
 import dev.serhiiyaremych.obvid.LocalShadowExtent
+import dev.serhiiyaremych.obvid.ShadowBuilds
 import dev.serhiiyaremych.obvid.sample.DemoLayout
 import dev.serhiiyaremych.obvid.sample.FrameHud
 import dev.serhiiyaremych.obvid.sample.LocalDemoLayout
@@ -53,9 +55,11 @@ import dev.serhiiyaremych.obvid.sample.discover.DiscoverPalette
 import dev.serhiiyaremych.obvid.sample.discover.DiscoverState
 import dev.serhiiyaremych.obvid.sample.readFullExtentSetting
 import dev.serhiiyaremych.obvid.sample.readNoInnerShadowsSetting
+import dev.serhiiyaremych.obvid.sample.readParallelBuildsSetting
 
 /**
- * The demo app: four tabs ([DemoTab]) under one app bar holding the Compose / Obvid switch and the frame HUD switch.
+ * The demo app: four tabs ([DemoTab]) under one app bar holding the Compose / Obvid switch, the toggle of Obvid's
+ * parallel first builds ([ShadowBuilds]) and the frame HUD switch.
  * Every shadow on screen, the app's own chrome included, draws with the switched implementation ([LocalShadowImpl]).
  *
  * Edge to edge: each tab's scene fills the window, behind the system bars, and the chrome lies over it ([ChromeScaffold]):
@@ -64,17 +68,21 @@ import dev.serhiiyaremych.obvid.sample.readNoInnerShadowsSetting
  * the page color fading out past its edge. The scenes are padded clear of the chrome by [DemoPadding], measured as the
  * chrome lays out.
  *
- * A switch rebuilds the tab's scene and the Feed's header and chips ([key]): every shadow modifier node is created anew
- * with empty caches, as on the first frame an app using that implementation draws, so the comparison starts cold each
- * time instead of carrying one implementation's warm state into the other. What the user did in a tab (feed position,
- * bookmarks, open card, camera) lives above the rebuild and survives it, as do the tab, the implementation and the HUD
- * across configuration changes. The Feed's header, chips and the bottom bar step aside while a feed card is open.
+ * A switch or the toggle rebuilds the tab's scene and the Feed's header and chips ([key]), so every shadow modifier
+ * node is created anew and reads the implementation and the build mode when it attaches. Obvid's shadows still in its
+ * idle cache come back without a build, so the toggled mode applies to shadows first built after it (new cards, an
+ * opened card); a cold start in a mode needs the setting and a new process. What the user did in a tab
+ * (feed position, bookmarks, open card, camera) lives above the rebuild and survives it, as do the tab, the
+ * implementation and the HUD across configuration changes. The Feed's header, chips and the bottom bar step aside while
+ * a feed card is open.
  * Margins and gaps follow the window width ([DemoLayout.forWindowWidth]).
  */
 @Composable
 fun DemoApp(initialImpl: ShadowImpl, initialHud: Boolean) {
   readNoInnerShadowsSetting(LocalContext.current)
   val extent = readFullExtentSetting(LocalContext.current)
+  val context = LocalContext.current
+  var builds by rememberSaveable { mutableStateOf(readParallelBuildsSetting(context)) }
   var tab by rememberSaveable { mutableStateOf(DemoTab.Feed) }
   var impl by rememberSaveable { mutableStateOf(initialImpl) }
   var hud by rememberSaveable { mutableStateOf(initialHud) }
@@ -91,6 +99,7 @@ fun DemoApp(initialImpl: ShadowImpl, initialHud: Boolean) {
       LocalShadowImpl provides impl,
       LocalDemoLayout provides layout,
       LocalShadowExtent provides extent,
+      LocalShadowBuilds provides builds,
     ) {
       Box(Modifier.fillMaxSize().background(DiscoverPalette.current.brushes.background)) {
         ChromeScaffold(
@@ -100,6 +109,8 @@ fun DemoApp(initialImpl: ShadowImpl, initialHud: Boolean) {
               metrics,
               impl,
               { impl = it },
+              builds,
+              { builds = it },
               hud,
               { hud = it },
               feed,
@@ -108,7 +119,7 @@ fun DemoApp(initialImpl: ShadowImpl, initialHud: Boolean) {
           },
           bottomChrome = { BottomBar(tab, { tab = it }, visible = { tab != DemoTab.Feed || feed.detail == null }) },
         ) {
-          key(impl) { TabContent(tab, feed, camera, padding) }
+          key(impl, builds) { TabContent(tab, feed, camera, padding) }
         }
         if (hud) FrameHud(Modifier.align(Alignment.TopCenter).offset { IntOffset(0, metrics.bar + HudGap.roundToPx()) })
       }
@@ -152,6 +163,8 @@ private fun DemoTopChrome(
   metrics: ChromeMetrics,
   impl: ShadowImpl,
   onImplChange: (ShadowImpl) -> Unit,
+  builds: ShadowBuilds,
+  onBuildsChange: (ShadowBuilds) -> Unit,
   hud: Boolean,
   onHudChange: (Boolean) -> Unit,
   feed: DiscoverState,
@@ -168,15 +181,15 @@ private fun DemoTopChrome(
     expanded = expanded,
     scrolled = { feed.listState.scrolledFromTop() },
     headerGap = layout.gap,
-    bar = { DemoTopBar(impl, onImplChange, hud, onHudChange) },
+    bar = { DemoTopBar(impl, onImplChange, builds, onBuildsChange, hud, onHudChange) },
     header = if (present) {
-      { key(impl) { DiscoverHeader(Modifier.padding(start = layout.margin + 4.dp, end = layout.margin + 4.dp, top = 12.dp)) } }
+      { key(impl, builds) { DiscoverHeader(Modifier.padding(start = layout.margin + 4.dp, end = layout.margin + 4.dp, top = 12.dp)) } }
     } else {
       null
     },
     pinned = if (present) {
       {
-        key(impl) {
+        key(impl, builds) {
           CategoryChipRow(
             CategoryLabels,
             selected = { feed.category },
