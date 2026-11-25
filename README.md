@@ -385,7 +385,7 @@ benchmarks, profiling, and tracing; it is written for coding agents, but also wo
 
 ## To do
 
-Ideas that were measured or scoped, but are not in Obvid yet:
+Ideas that were measured or scoped. A ticked item is done; the version in brackets is the release that has it.
 
 - [ ] [Parallel rebuilds](docs/to-do.md#parallel-rebuilds): workers also for shadows that change size.
 - [ ] [Faster first builds](docs/to-do.md#faster-first-builds): 3.5 ms on a Pad 5 little core after idle.
@@ -396,6 +396,8 @@ Ideas that were measured or scoped, but are not in Obvid yet:
 - [ ] [A GPU route](docs/to-do.md#a-gpu-route) for the simplest shapes, to compare with the CPU route.
 - [ ] [More ABIs](docs/to-do.md#more-abis): 32-bit ARM and x86_64.
 - [ ] [Maven Central](docs/to-do.md#maven-central), after the GitHub Pages repository shows that it is reliable.
+- [x] [Parallel builds when a screen opens](docs/to-do.md#parallel-builds-when-a-screen-opens): big cores share the first frame's builds.
+- [x] [A NEON small blur](docs/to-do.md#a-neon-small-blur) for blur radii below approximately 2.6 px (0.1.1).
 
 ## License and credits
 

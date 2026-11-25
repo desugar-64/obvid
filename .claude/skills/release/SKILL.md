@@ -46,6 +46,9 @@ release cannot be taken back: only start one when the user asks for it in their 
    It sets the version from the newest tag, renames `## Unreleased` to `## <version>` and puts a new empty
    `## Unreleased` above it. It stops if the section is empty or a bump is already waiting for its release. Read the
    section: it is the release text, written for people who use Obvid.
+
+   Then give each finished to-do item this version. In the README's To do list, add ` (<version>)` to each ticked item
+   without one. In `docs/to-do.md`, under `## Done`, change "not released yet" to "in <version>".
 2. **Release pull request:** commit `release: <version>`, push, and open it (`${GH:-gh} pr create --title "Release
    <version>"`, body in the `feature-issue` skill's format: the AI line, STE). The user merges it.
 3. **Full device suite** on the Pixel 6, on the merge commit of the release pull request, once CI has passed on it
