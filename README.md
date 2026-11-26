@@ -388,7 +388,7 @@ benchmarks, profiling, and tracing; it is written for coding agents, but also wo
 Ideas that were measured or scoped. A ticked item is done; the version in brackets is the release that has it.
 
 - [ ] [Parallel rebuilds](docs/to-do.md#parallel-rebuilds): workers also for shadows that change size.
-- [ ] [Faster first builds](docs/to-do.md#faster-first-builds): 3.5 ms on a Pad 5 little core after idle.
+- [ ] [Faster first builds](docs/to-do.md#faster-first-builds): 3.5 ms on a Pad 5 little core after idle. The first try ([#12](https://github.com/desugar-64/obvid/issues/12)) gave no gain; next, keep the blur's buffers.
 - [ ] [Fewer draw commands for shadows that scroll](docs/to-do.md#fewer-draw-commands-for-shadows-that-scroll): for tablets with a weak GPU.
 - [ ] [Drop shadows under opaque content](docs/to-do.md#drop-shadows-under-opaque-content): opt-in, skip the hidden middle.
 - [ ] [More shapes on the fast path](docs/to-do.md#more-shapes-on-the-fast-path): rects, blur radius 0, paths with spread.
